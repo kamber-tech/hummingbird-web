@@ -1802,7 +1802,7 @@ export default function SimulatorPage() {
             {/* Mode selector — primary modes first, space as secondary */}
             <div>
               <Label>Mode</Label>
-              <div className="grid grid-cols-3 gap-2 mt-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
                 {(["laser", "microwave", "compare"] as const).map((m) => (
                   <ModeButton key={m} active={mode === m} onClick={() => setMode(m)}>
                     {m === "laser" ? "Laser" : m === "microwave" ? "Microwave" : "Compare"}

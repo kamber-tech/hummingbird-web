@@ -610,7 +610,7 @@ export default function SweepPage() {
         <div className="text-xs uppercase tracking-wider mb-3" style={{ color: "var(--text-subtle)" }}>
           Use Case Presets — click to pin an operating point on the chart
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: "thin" }}>
+        <div className="flex gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: "thin", WebkitMaskImage: "linear-gradient(to right, black 85%, transparent 100%)" }}>
           {SWEEP_PRESETS.map((p) => {
             const active = selectedPreset?.id === p.id;
             return (
@@ -1146,6 +1146,7 @@ export default function SweepPage() {
             {/* Quick mode-selection decision matrix */}
             <Card>
               <SectionHeader>Mode Selection Decision Matrix</SectionHeader>
+              <div className="overflow-x-auto">
               <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
                 {[
                   { range: "0 – 200 m", clear: "Laser or Microwave", smoke: "Microwave", rain: "Microwave", note: "Near-field; both viable" },
@@ -1172,6 +1173,7 @@ export default function SweepPage() {
                   ))}
                 </div>
               </div>
+              </div>
             </Card>
           </div>
         )}
@@ -1195,7 +1197,7 @@ export default function SweepPage() {
                     </div>
                     <span className="text-sm" style={{ color: "var(--text-subtle)" }}>{expandedSolution === i ? "▲" : "▼"}</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-3 mt-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                     {[
                       { label: "Efficiency gain", value: s.gain, color: "#22c55e" },
                       { label: "Cost estimate", value: s.cost, color: "#facc15" },

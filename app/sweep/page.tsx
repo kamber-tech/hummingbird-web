@@ -521,7 +521,8 @@ export default function SweepPage() {
               <Tooltip
                 contentStyle={{ background: "#18181f", border: "1px solid #252530", borderRadius: 8, fontSize: 11, color: "#f0f0f5" }}
                 labelFormatter={(v) => `${v} km`}
-                formatter={(v: number, name: string) => [`${v?.toFixed ? v.toFixed(2) : v}%`, name]}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                formatter={(v: any) => [`${typeof v === "number" ? v.toFixed(2) : v}%`]}
               />
               <Legend
                 wrapperStyle={{ fontSize: 10, color: "#8888a0", paddingTop: 12 }}

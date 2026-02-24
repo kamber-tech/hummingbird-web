@@ -1226,7 +1226,7 @@ export default function SweepPage() {
                   { step: "Baseline (current simulator)", eff: "6–10%", delta: "" },
                   { step: "+ 1550 nm wavelength (AO-compatible EDFA system)", eff: "7–12%", delta: "+1–2 pts (lower atm loss + better AO response)" },
                   { step: "+ Adaptive optics (2.5× Strehl improvement)", eff: "15–28%", delta: "+8–16 pts (dominant gain at 2 km)" },
-                  { step: "+ InP PV cells (35% → 55% conversion)", eff: "23–43%", delta: "+8–15 pts relative" },
+                  { step: "+ InP PV cells (43% actual → 55% InP)", eff: "23–43%", delta: "+8–15 pts relative" },
                   { step: "+ Larger aperture (0.3 → 0.5 m)", eff: "27–50%", delta: "+4–7 pts" },
                   { step: "Total best-case (lab conditions, pre-dawn, low Cn²)", eff: "35–50%", delta: "Physics ceiling for the technology chain" },
                   { step: "Total realistic fielded (daytime, moderate turbulence)", eff: "20–30%", delta: "DARPA PRAD 2025 anchor: ~20% real-world" },

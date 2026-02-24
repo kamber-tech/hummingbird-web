@@ -107,9 +107,11 @@ type OptimizedResult = {
 
 function fmt(n: number, digits = 1) {
   if (n == null) return "—";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(digits)}k`;
-  return n.toFixed(digits);
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(digits)}k`;
+  return `${sign}${abs.toFixed(digits)}`;
 }
 
 // ── Primitive components ───────────────────────────────────────────────────────
@@ -532,9 +534,18 @@ function FinancialsTab({ result }: { result: SimResult }) {
           </div>
           {paybackMonths && (
             <div className="mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
-              Payback: <span className="font-semibold" style={{ color: "var(--green)" }}>{paybackMonths} month{paybackMonths !== 1 ? "s" : ""}</span>
-              {" "}after deployment · 5-year net: <span className="font-semibold" style={{ color: "var(--green)" }}>+${fmt(fiveYearRows[4].net)}</span>
-              {" "}· Net annual value after opex: <span className="font-semibold" style={{ color: "var(--green)" }}>${fmt(netVal)}</span>/yr
+              Payback:{" "}
+              <span className="font-semibold" style={{ color: paybackMonths > 360 ? "#f97316" : "var(--green)" }}>
+                {paybackMonths > 360 ? "Not viable (>30 yr)" : `${paybackMonths} month${paybackMonths !== 1 ? "s" : ""}`}
+              </span>
+              {" "}after deployment · 5-year net:{" "}
+              <span className="font-semibold" style={{ color: fiveYearRows[4].net >= 0 ? "var(--green)" : "#f97316" }}>
+                {fiveYearRows[4].net >= 0 ? "+" : ""}${fmt(fiveYearRows[4].net)}
+              </span>
+              {" "}· Net annual value after opex:{" "}
+              <span className="font-semibold" style={{ color: netVal >= 0 ? "var(--green)" : "#f97316" }}>
+                {netVal >= 0 ? "+" : ""}${fmt(netVal)}
+              </span>/yr
             </div>
           )}
         </div>

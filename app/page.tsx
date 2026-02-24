@@ -16,6 +16,18 @@ import {
 type LossBudget = Record<string, number | string | null>;
 type RequiredHardware = Record<string, string | number>;
 
+type FeasibilityInfo = {
+  is_feasible: boolean;
+  regime: string;
+  rayleigh_distance_m: number | null;
+  beam_radius_at_range_m: number | null;
+  required_rx_aperture_m2: number | null;
+  note: string;
+  best_mode_for_range: "laser" | "microwave";
+  best_mode_reason: string;
+  darpa_prad_anchor: string;
+};
+
 type SimResult = {
   mode: string;
   range_km: number;
@@ -38,6 +50,7 @@ type SimResult = {
   performance_rating?: string;
   feasibility_ok?: boolean;
   feasibility_warning?: string | null;
+  feasibility?: FeasibilityInfo;
 };
 
 type CompareResult = {
@@ -165,6 +178,64 @@ function LaserLinkBudget({ lb }: { lb: LossBudget }) {
   );
 }
 
+function FeasibilityBanner({ f, mode }: { f: FeasibilityInfo; mode: string }) {
+  const regime = f.regime;
+  const isFog = f.note.includes("FOG HARD BLOCK");
+
+  let color: string;
+  let badge: string;
+  let badgeClass: string;
+
+  if (!f.is_feasible || isFog) {
+    color = "bg-red-900/20 border-red-700/50 text-red-300";
+    badgeClass = "bg-red-800 text-red-200";
+    badge = isFog ? "🚫 FOG BLOCK" : "✗ INFEASIBLE";
+  } else if (f.regime === "far-field" && mode === "microwave") {
+    color = "bg-yellow-900/20 border-yellow-700/50 text-yellow-300";
+    badgeClass = "bg-yellow-800 text-yellow-200";
+    badge = "⚠ FAR-FIELD";
+  } else {
+    color = "bg-green-900/20 border-green-700/50 text-green-300";
+    badgeClass = "bg-green-800 text-green-200";
+    badge = "✓ FEASIBLE";
+  }
+
+  return (
+    <div className={`rounded-lg border px-4 py-3 text-xs space-y-2 ${color}`}>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${badgeClass}`}>{badge}</span>
+        <span className="font-mono text-gray-300 uppercase tracking-wide">{regime.replace(/_/g, "-")}</span>
+        {f.rayleigh_distance_m != null && (
+          <span className="text-gray-400">Rayleigh: <span className="font-mono text-white">{f.rayleigh_distance_m.toFixed(0)} m</span></span>
+        )}
+      </div>
+      <p className="leading-relaxed">{f.note}</p>
+      {f.beam_radius_at_range_m != null && f.required_rx_aperture_m2 != null && (
+        <div className="flex gap-6 pt-1 border-t border-current/20 text-gray-400">
+          <span>Beam radius: <span className="text-white font-mono">{f.beam_radius_at_range_m.toFixed(1)} m</span></span>
+          <span>50%-capture aperture: <span className="text-white font-mono">{f.required_rx_aperture_m2.toFixed(0)} m²</span></span>
+        </div>
+      )}
+      <p className="text-gray-500 italic text-[10px]">Ref: {f.darpa_prad_anchor}</p>
+    </div>
+  );
+}
+
+function BestModePanel({ f }: { f: FeasibilityInfo }) {
+  const isLaser = f.best_mode_for_range === "laser";
+  return (
+    <div className="bg-gray-900/50 border border-gray-800 rounded-lg px-4 py-3 text-xs">
+      <div className="text-gray-400 uppercase tracking-wider mb-1.5">Best Mode for This Scenario</div>
+      <div className="flex items-center gap-2">
+        <span className={`px-2 py-0.5 rounded font-bold uppercase text-xs ${isLaser ? "bg-blue-800 text-blue-200" : "bg-purple-800 text-purple-200"}`}>
+          {f.best_mode_for_range === "laser" ? "⚡ LASER" : "📡 MICROWAVE"}
+        </span>
+        <span className="text-gray-300 leading-relaxed">{f.best_mode_reason}</span>
+      </div>
+    </div>
+  );
+}
+
 function PhysicsDetailPanel({ result }: { result: SimResult }) {
   const [open, setOpen] = useState(false);
   const lb = result.loss_budget;
@@ -191,6 +262,16 @@ function PhysicsDetailPanel({ result }: { result: SimResult }) {
               <div>Fried r₀: {((lb.fried_r0_m as number) * 100).toFixed(2)} cm</div>
               <div>Rytov variance: {(lb.rytov_variance as number)?.toExponential(3)}</div>
               <div>M² beam quality: {lb.m2_beam_quality as number}</div>
+            </div>
+          )}
+          {result.feasibility?.rayleigh_distance_m != null && (
+            <div className="mt-2 pt-2 border-t border-gray-800 text-xs text-gray-500 space-y-0.5">
+              <div className="text-gray-400 font-semibold mb-1">Near/Far-Field Boundary</div>
+              <div>Rayleigh distance: <span className="text-gray-200 font-mono">{result.feasibility.rayleigh_distance_m.toFixed(1)} m</span></div>
+              <div>Range is <span className="text-gray-200 font-mono">{((result.range_km * 1000) / (result.feasibility.rayleigh_distance_m || 1)).toFixed(0)}×</span> beyond Rayleigh — deep far-field</div>
+              {result.feasibility.beam_radius_at_range_m != null && (
+                <div>Beam radius @ {result.range_km.toFixed(1)} km: <span className="text-orange-400 font-mono">{result.feasibility.beam_radius_at_range_m.toFixed(1)} m</span></div>
+              )}
             </div>
           )}
         </div>
@@ -240,8 +321,13 @@ function ResultPanel({ result }: { result: SimResult }) {
         )}
       </div>
 
-      {/* Feasibility warning */}
-      {infeasible && result.feasibility_warning && (
+      {/* Feasibility banner (v3) */}
+      {result.feasibility && (
+        <FeasibilityBanner f={result.feasibility} mode={result.mode} />
+      )}
+
+      {/* Legacy feasibility warning (fallback when feasibility object absent) */}
+      {!result.feasibility && infeasible && result.feasibility_warning && (
         <div className="bg-red-900/20 border border-red-700/50 rounded-lg px-4 py-3 text-red-300 text-xs">
           <span className="font-bold">⚠ Feasibility Warning: </span>
           {result.feasibility_warning}
@@ -316,6 +402,9 @@ function ResultPanel({ result }: { result: SimResult }) {
 
       {/* Physics Detail (expandable) */}
       {result.loss_budget && <PhysicsDetailPanel result={result} />}
+
+      {/* Best mode recommendation */}
+      {result.feasibility && <BestModePanel f={result.feasibility} />}
 
       {/* Savings breakdown */}
       <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-4 text-sm space-y-2">
@@ -567,14 +656,16 @@ export default function SimulatorPage() {
 
           {/* Info */}
           <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4 text-xs text-gray-500 space-y-1.5">
-            <div className="text-gray-400 font-mono text-xs mb-2">PHYSICS MODELS</div>
-            <div>• Laser: Gaussian beam propagation + M² + turbulence (Hufnagel-Valley Cn²)</div>
-            <div>• Microwave: Friis/phased array (5.8 GHz) + Ruze phase error</div>
-            <div>• Atmo: Beer-Lambert (laser) + ITU-R P.838-3 rain (MW)</div>
-            <div>• Turbulence: Fried r₀ + Strehl ratio + pointing jitter</div>
-            <div>• Hardware auto-sized to deliver target power</div>
-            <div>• Economics: DoD fully-burdened fuel at $12/L</div>
-            <div>• Convoy: $600/convoy-mile (RAND estimate)</div>
+            <div className="text-gray-400 font-mono text-xs mb-2">PHYSICS MODELS (v3 — validated 2025)</div>
+            <div>• Laser: Gaussian beam + M² + Fried r₀ + Strehl + pointing jitter</div>
+            <div>• Laser atmo: 0.05 dB/km (clear), 1.0 (haze), 0.2 (rain), fog=BLOCK</div>
+            <div>• Microwave: Friis + 5.8 GHz phased array + Ruze phase error</div>
+            <div>• MW rain: ITU-R P.838-3 (10→0.07, 25→0.22, 50→0.44 dB/km)</div>
+            <div>• Rectenna: GaN power-density curve (85% @≥2W, 65% @low power)</div>
+            <div>• MW: fixed realistic hardware (no back-calculation to target)</div>
+            <div>• System overhead: ×0.65, capped at 35% (DARPA PRAD anchor)</div>
+            <div>• Anchor: DARPA POWER PRAD 2025 — 800W @ 8.6 km, ~20% eff</div>
+            <div>• Economics: DoD fully-burdened fuel $12/L, convoy $600/mile</div>
           </div>
         </div>
 

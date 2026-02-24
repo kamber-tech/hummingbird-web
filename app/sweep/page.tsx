@@ -468,6 +468,10 @@ export default function SweepPage() {
   const [expandedSolution, setExpandedSolution] = useState<number | null>(null);
   const [showTable, setShowTable] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<SweepPreset | null>(null);
+  const [comparePowerKw, setComparePowerKw] = useState<number | null>(null);
+  const [compareLaserData, setCompareLaserData] = useState<SweepPoint[]>([]);
+  const [compareMwData, setCompareMwData] = useState<SweepPoint[]>([]);
+  const [loadingCompare, setLoadingCompare] = useState(false);
 
   const runSweep = useCallback(async (m: "laser" | "microwave", p: number) => {
     setLoading(true);
@@ -486,52 +490,89 @@ export default function SweepPage() {
     }
   }, []);
 
+  const runCompare = useCallback(async (p: number) => {
+    setLoadingCompare(true);
+    try {
+      const [laser, mw] = await Promise.all([
+        sweep("laser", p),
+        sweep("microwave", p),
+      ]);
+      setCompareLaserData(laser);
+      setCompareMwData(mw);
+    } catch {
+      // silent — compare is best-effort
+    } finally {
+      setLoadingCompare(false);
+    }
+  }, []);
+
   // Auto-run on load
   useEffect(() => {
     runSweep("laser", powerKw);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Merge laser + microwave into one chart dataset
+  // Merge laser + microwave (primary + optional comparison) into one chart dataset
   function buildChartData() {
     const byRange: Record<number, PivotRow> = {};
-    for (const pt of laserData) {
-      if (!byRange[pt.range_km]) byRange[pt.range_km] = { range_km: pt.range_km };
-      if (pt.system_eff_pct != null && !isNaN(pt.system_eff_pct)) {
-        byRange[pt.range_km][`laser_${pt.condition}`] = parseFloat(pt.system_eff_pct.toFixed(3));
+    const addPts = (pts: SweepPoint[], prefix: string) => {
+      for (const pt of pts) {
+        if (!byRange[pt.range_km]) byRange[pt.range_km] = { range_km: pt.range_km };
+        if (pt.system_eff_pct != null && !isNaN(pt.system_eff_pct)) {
+          byRange[pt.range_km][`${prefix}${pt.condition}`] = parseFloat(pt.system_eff_pct.toFixed(3));
+        }
       }
-    }
-    for (const pt of mwData) {
-      if (!byRange[pt.range_km]) byRange[pt.range_km] = { range_km: pt.range_km };
-      if (pt.system_eff_pct != null && !isNaN(pt.system_eff_pct)) {
-        byRange[pt.range_km][`mw_${pt.condition}`] = parseFloat(pt.system_eff_pct.toFixed(3));
-      }
+    };
+    addPts(laserData, "laser_");
+    addPts(mwData, "mw_");
+    if (comparePowerKw !== null) {
+      addPts(compareLaserData, "cmp_laser_");
+      addPts(compareMwData, "cmp_mw_");
     }
     return Object.values(byRange).sort((a, b) => a.range_km - b.range_km);
   }
 
   const laserConditions = laserData.length ? Array.from(new Set(laserData.map(p => p.condition))) : [];
   const mwConditions = mwData.length ? Array.from(new Set(mwData.map(p => p.condition))) : [];
+  const cmpLaserConditions = compareLaserData.length ? Array.from(new Set(compareLaserData.map(p => p.condition))) : [];
+  const cmpMwConditions = compareMwData.length ? Array.from(new Set(compareMwData.map(p => p.condition))) : [];
   const chartData = buildChartData();
 
   const hasData = laserData.length > 0 || mwData.length > 0;
 
-  // Chart lines to show: all laser conditions + all mw conditions
   const laserLines = laserConditions.map(c => ({
     key: `laser_${c}`,
-    label: `Laser — ${CONDITION_META[c]?.label ?? c}`,
+    label: `Laser — ${CONDITION_META[c]?.label ?? c} (${powerKw}kW)`,
     color: CONDITION_META[c]?.color ?? "#888",
     dash: CONDITION_META[c]?.dash,
-    mode: "laser",
+    strokeWidth: 2.5,
+    opacity: 1,
   }));
   const mwLines = mwConditions.map(c => ({
     key: `mw_${c}`,
-    label: `Microwave — ${CONDITION_META[c]?.label ?? c}`,
+    label: `Microwave — ${CONDITION_META[c]?.label ?? c} (${powerKw}kW)`,
     color: CONDITION_META[c]?.color ?? "#888",
     dash: "10 5",
-    mode: "mw",
+    strokeWidth: 1.5,
+    opacity: 1,
   }));
-  const allLines = [...laserLines, ...mwLines];
+  const cmpLaserLines = comparePowerKw !== null ? cmpLaserConditions.map(c => ({
+    key: `cmp_laser_${c}`,
+    label: `Laser — ${CONDITION_META[c]?.label ?? c} (${comparePowerKw}kW ◈)`,
+    color: CONDITION_META[c]?.color ?? "#888",
+    dash: "4 3",
+    strokeWidth: 1.5,
+    opacity: 0.5,
+  })) : [];
+  const cmpMwLines = comparePowerKw !== null ? cmpMwConditions.map(c => ({
+    key: `cmp_mw_${c}`,
+    label: `Microwave — ${CONDITION_META[c]?.label ?? c} (${comparePowerKw}kW ◈)`,
+    color: CONDITION_META[c]?.color ?? "#888",
+    dash: "2 4",
+    strokeWidth: 1,
+    opacity: 0.45,
+  })) : [];
+  const allLines = [...laserLines, ...mwLines, ...cmpLaserLines, ...cmpMwLines];
 
   return (
     <div
@@ -615,6 +656,46 @@ export default function SweepPage() {
               Drone ISR: 0.5 kW · Sensor: 0.1 kW · SOF: 3 kW · FOB: 15 kW · C-UAS: 10 kW
             </div>
           </div>
+          <div>
+            <div className="text-xs uppercase tracking-wider mb-2" style={{ color: "var(--text-muted)" }}>
+              Compare with power level
+            </div>
+            <div className="flex gap-1.5 flex-wrap">
+              {[null, 0.5, 5, 15, 50].map((p) => {
+                const active = comparePowerKw === p;
+                const label = p === null ? "None" : `${p} kW`;
+                return (
+                  <button
+                    key={String(p)}
+                    onClick={() => {
+                      setComparePowerKw(p);
+                      if (p !== null && p !== powerKw) {
+                        runCompare(p);
+                      } else {
+                        setCompareLaserData([]);
+                        setCompareMwData([]);
+                      }
+                    }}
+                    className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                    style={
+                      active
+                        ? { background: "var(--accent-dim)", color: "var(--accent)", border: "1px solid var(--accent)" }
+                        : { background: "var(--surface-2)", color: "var(--text-muted)", border: "1px solid var(--border)" }
+                    }
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+              {loadingCompare && (
+                <span className="text-xs self-center animate-pulse" style={{ color: "var(--text-muted)" }}>loading…</span>
+              )}
+            </div>
+            <div className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>
+              Overlays a second sweep at faded opacity — faint lines show how power level shifts the curve
+            </div>
+          </div>
+
           <button
             onClick={() => runSweep(mode, powerKw)}
             disabled={loading}
@@ -683,11 +764,22 @@ export default function SweepPage() {
       {/* ── Chart ── */}
       {hasData && (
         <Card>
-          <SectionHeader>System Efficiency (%) vs Range (km) — All Conditions, Laser + Microwave</SectionHeader>
-          <p className="text-xs mb-5" style={{ color: "var(--text-muted)" }}>
-            Solid lines = laser. Dashed/dotted = microwave. Annotated thresholds mark physics regime boundaries.
-            Fog-blocked conditions (laser in rain, smoke beyond the hard-block threshold) appear as 0% or missing.
-          </p>
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-subtle)" }}>
+                System Efficiency (%) vs Range (km) — All Conditions, Laser + Microwave
+              </div>
+              <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                Solid lines = laser. Dashed = microwave. Faded ◈ lines = comparison power level.
+                Fog-blocked conditions appear as 0% or missing.
+              </p>
+            </div>
+            {comparePowerKw !== null && (
+              <div className="shrink-0 text-xs px-2.5 py-1 rounded-lg font-mono" style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
+                {powerKw} kW vs <span style={{ color: "var(--accent)" }}>{comparePowerKw} kW ◈</span>
+              </div>
+            )}
+          </div>
           <ResponsiveContainer width="100%" height={400}>
             <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#252530" />
@@ -734,8 +826,9 @@ export default function SweepPage() {
                   dataKey={l.key}
                   name={l.label}
                   stroke={l.color}
-                  strokeWidth={l.mode === "laser" ? 2.5 : 1.5}
+                  strokeWidth={l.strokeWidth}
                   strokeDasharray={l.dash}
+                  strokeOpacity={l.opacity}
                   dot={false}
                   connectNulls={false}
                 />

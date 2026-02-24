@@ -34,7 +34,7 @@ export default function RootLayout({
                 Financial
               </Link>
             </div>
-            <div className="ml-auto text-xs text-gray-500 font-mono">
+            <div className="ml-auto text-xs text-gray-500 font-mono hidden sm:block">
               WPT DEFENSE LOGISTICS SIM v1.0
             </div>
           </div>

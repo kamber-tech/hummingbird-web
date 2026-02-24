@@ -718,7 +718,7 @@ function HardwarePanel({ hw }: { hw: RequiredHardware }) {
       >
         Required Hardware — {hw.type as string}
       </div>
-      <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
         {entries.map(([k, v]) => (
           <div key={k} className="flex justify-between text-sm">
             <span style={{ color: "var(--text-muted)" }}>{k.replace(/_/g, " ")}</span>
@@ -996,7 +996,7 @@ function ComparePanel({ result }: { result: CompareResult }) {
       </div>
 
       {/* Side-by-side summary cards */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {(["laser", "microwave"] as const).map((m) => {
           const r = result[m];
           const winner = m === "laser" ? laserBetter : !laserBetter;
@@ -1199,7 +1199,7 @@ function SpaceResultPanel({ result }: { result: SpaceResult }) {
           <div className="text-xs font-medium uppercase tracking-wider mb-3" style={{ color: "var(--text-muted)" }}>
             Infrastructure Required — {hw.type}
           </div>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
             {Object.entries(hw).filter(([k]) => k !== "type").map(([k, v]) => (
               <div key={k} className="flex justify-between text-sm">
                 <span style={{ color: "var(--text-muted)" }}>{k.replace(/_/g, " ")}</span>
@@ -1250,7 +1250,7 @@ function OptimizedResultPanel({ result }: { result: OptimizedResult }) {
       </div>
 
       {/* Side-by-side */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="rounded-xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
           <div className="text-xs uppercase tracking-wider mb-3" style={{ color: "var(--text-subtle)" }}>Baseline</div>
           <div className="space-y-2">

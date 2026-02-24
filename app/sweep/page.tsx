@@ -208,7 +208,7 @@ const REGIMES = [
       "System efficiency ceiling (microwave): ~2–4% at 300 m (beam spread dominates)",
     ],
     solutions: [
-      { fix: "InP monochromatic PV cells", gain: "+12 points efficiency (43% actual → 55% InP)" },
+      { fix: "InP monochromatic PV cells", gain: "+10% relative gain (GaAs 50% → InP 55% peak cell efficiency)" },
       { fix: "Larger TX aperture (2× diameter)", gain: "+6 dB geometric capture = 4× more power at receiver" },
       { fix: "GaN PA next-gen (65%)", gain: "+10 points wall-plug efficiency vs standard 55%" },
     ],
@@ -367,9 +367,9 @@ const CONDITION_DEEP_DIVE = [
     cond: "rain",
     title: "Rain (Heavy, 50 mm/hr)",
     color: "#60a5fa",
-    laser: "Hard block. Fog/rain droplets are comparable to laser wavelength — Mie scattering is catastrophic. The simulator treats heavy rain as a hard fog block for laser (>10 dB/km, availability gate). Laser WPT is not viable in rain.",
+    laser: "Low impact. Rain droplets (1–5 mm) are far larger than laser wavelength (1 μm) — geometric scattering, not Mie resonance. Backend: β = 0.046/km ≈ 0.20 dB/km at 50 mm/hr. At 5 km in heavy rain: ~1 dB loss. Laser WPT remains viable through rain — fog (droplets 1–100 μm, comparable to λ) is the hard block, not rain.",
     microwave: "Best weather survival. ITU-R P.838-3: k=0.00454, α=1.244 at 5.8 GHz. Attenuation: 0.97 dB/km at 100 mm/hr, 0.44 dB/km at 50 mm/hr. At 5 km in heavy rain: only 2.2–4.8 dB loss from atmosphere — easily manageable.",
-    decision: "Rain = microwave only (at ranges where geometric spread allows viable power delivery — typically <500 m for portable receivers, or fixed large-aperture rectennas at multi-km for infrastructure WPT).",
+    decision: "Rain = both viable. Laser preferred at tactical range (higher efficiency, minimal rain attenuation). Microwave comparable weather resistance. Key differentiator: fog/cloud (not rain) is where laser fails — and where relay-regeneration is needed.",
   },
   {
     cond: "haze",
@@ -426,7 +426,7 @@ NV invisibility: standard Gen 2/3 NV tubes sensitive to 600–900 nm only. 1550 
   {
     title: "InP Monochromatic PV Cells",
     status: "Lab-demonstrated 55%; commercializing 2025–2026 (Sandia, Alta Devices)",
-    gain: "+12 percentage points conversion efficiency (43% actual → 55% InP)",
+    gain: "+10% relative improvement (GaAs 50% → InP 55% peak cell; same 0.86 derating → 43% actual → 47% actual)",
     cost: "$50–200/cm² at present; volume production expected to reduce to $5–20/cm²",
     trl: "TRL 5–6 (single-cell demonstrated; module-level in progress)",
     detail: `Standard PV cells convert broadband sunlight at 20–25% efficiency. Monochromatic PV cells are optimized for a single laser wavelength — bandgap matched to photon energy. At 1070 nm: GaAs cells achieve 45–50%. At 1550 nm: InP cells achieve 50–55% (Sandia 2023).
@@ -1067,7 +1067,7 @@ export default function SweepPage() {
                   {
                     scenario: "Laser · 2 km · Clear · 15 kW target",
                     chain: [
-                      { step: "Wall-plug → photon (laser)", value: "50%", db: "−3.0 dB" },
+                      { step: "Wall-plug → photon (laser, Yb:fiber)", value: "40%", db: "−3.98 dB" },
                       { step: "Atmospheric absorption (clear, 2 km)", value: "98%", db: "−0.08 dB" },
                       { step: "Turbulence Strehl (Cn² = 10⁻¹⁴, daytime)", value: "3–15%", db: "−8 to −15 dB" },
                       { step: "Pointing jitter (5 µrad at 2 km)", value: "85%", db: "−0.7 dB" },

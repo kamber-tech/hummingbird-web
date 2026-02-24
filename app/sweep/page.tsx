@@ -776,8 +776,8 @@ export default function SweepPage() {
       {/* ── Chart ── */}
       {hasData && (
         <Card>
-          <div className="flex items-start justify-between gap-4 mb-4">
-            <div className="flex-1 min-w-0">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
+            <div className="min-w-0">
               <div className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-subtle)" }}>
                 {yMetric === "system_eff_pct" ? "System Efficiency (%) vs Range (km)"
                   : yMetric === "dc_power_kw" ? "DC Power Delivered (kW) vs Range (km)"
@@ -793,7 +793,7 @@ export default function SweepPage() {
                 </p>
               )}
             </div>
-            <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+            <div className="flex items-center gap-2 flex-wrap">
               {/* Y-axis metric selector */}
               <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
                 {([

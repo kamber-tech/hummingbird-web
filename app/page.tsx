@@ -148,7 +148,7 @@ function LaserLinkBudget({ lb }: { lb: LossBudget }) {
     <div className="space-y-0.5">
       <LossRow label="Wall-plug → photon" db={lb.wall_plug_loss_db as number} />
       <LossRow label="Atmospheric absorption" db={lb.atmospheric_absorption_db as number} />
-      <LossRow label={`Turbulence Strehl (Cn²=${(lb.Cn2_m_neg23 as number)?.toExponential(0)})`} db={lb.turbulence_strehl_db as number} />
+      <LossRow label={`Turbulence Strehl (Cn²=${lb.Cn2_m_neg23 != null ? Number(lb.Cn2_m_neg23).toExponential(0) : "?"})`} db={lb.turbulence_strehl_db as number} />
       <LossRow label="Pointing jitter (5 µrad)" db={lb.pointing_jitter_db as number} />
       <LossRow label="Geometric capture" db={lb.geometric_collection_db as number} />
       <LossRow label="Central obscuration (20%)" db={lb.central_obscuration_db as number} />
@@ -224,7 +224,7 @@ function ResultPanel({ result }: { result: SimResult }) {
     { name: "Elec Input", value: result.electrical_input_kw, fill: "#60a5fa" },
   ];
 
-  const infeasible = result.feasibility_ok === false || result.feasibility_ok === "False";
+  const infeasible = result.feasibility_ok === false;
 
   return (
     <div className="space-y-4">
@@ -351,7 +351,7 @@ function ComparePanel({ result }: { result: CompareResult }) {
       <div className="grid grid-cols-2 gap-3">
         {(["laser", "microwave"] as const).map((m) => {
           const r = result[m];
-          const infeasible = r.feasibility_ok === false || r.feasibility_ok === "False";
+          const infeasible = r.feasibility_ok === false;
           return (
             <div key={m} className="bg-gray-900 border border-gray-700 rounded-lg p-3">
               <div className={`flex items-center gap-2 mb-2`}>

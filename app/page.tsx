@@ -238,6 +238,247 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+// ── Efficiency Roadmap helpers ────────────────────────────────────────────────
+
+function getEfficiencyExplanation(mode: string, eff: number, condition: string, range: number): string {
+  if (mode === "laser") {
+    if (condition === "fog") return "Fog completely blocks the laser beam — no power can be delivered through cloud cover. This is a fundamental limit of optical WPT.";
+    if (condition === "smoke") return `Smoke/battlefield aerosols scatter ${(range * 8).toFixed(0)} dB of laser power over ${range.toFixed(1)} km. Direct laser WPT through smoke is extremely lossy — the relay-regeneration architecture solves this.`;
+    if (eff < 3) return `At ${range.toFixed(1)} km, geometric beam spread captures only a tiny fraction of the transmitted power at the receiver aperture. The beam is physically larger than the receiver at this range.`;
+    return `Laser wall-plug efficiency (~40%) × atmospheric transmission × geometric capture × PV cell efficiency (~35–55%) × DC conditioning. Each stage multiplies the losses.`;
+  } else {
+    if (range > 1) return `At ${range.toFixed(1)} km, the 5.8 GHz beam is ${(range * 55).toFixed(0)} m wide — far larger than any portable receiver. Beam divergence is the dominant loss for microwave beyond 500m.`;
+    return `Phased array efficiency (~55% PA) × free-space path loss × atmospheric loss × rectenna conversion (~85% at full power). At short range, rectenna efficiency and PA losses dominate.`;
+  }
+}
+
+function getImprovements(mode: string, condition: string, range: number, _baseEff: number): Array<{title: string; gain: string; desc: string; difficulty: string}> {
+  const improvements: Array<{title: string; gain: string; desc: string; difficulty: string}> = [];
+
+  if (mode === "laser") {
+    improvements.push({
+      title: "Adaptive optics pre-compensation",
+      gain: "2–3×",
+      desc: "Wavefront correction before transmission reduces turbulence-induced spreading. AFRL demonstrated 2–4× improvement.",
+      difficulty: "Medium"
+    });
+    improvements.push({
+      title: "InP photovoltaic cells (55%)",
+      gain: "+57% eff",
+      desc: "Best-in-class monochromatic PV at 1070nm. Alta Devices/NextGen measured 55.2% in 2023. Default uses 35%.",
+      difficulty: "Available now"
+    });
+    improvements.push({
+      title: "Larger receive aperture",
+      gain: "4× at 2×dia",
+      desc: "Doubling receiver diameter quadruples collection area. Most impactful at long range where beam is wide.",
+      difficulty: "Hardware cost"
+    });
+    if (condition === "smoke" || condition === "fog") {
+      improvements.push({
+        title: "Switch to 1550nm wavelength",
+        gain: "40% less loss",
+        desc: "1550nm has lower Mie scattering in smoke/dust. Also eye-safe — no exclusion zones for personnel.",
+        difficulty: "System redesign"
+      });
+      improvements.push({
+        title: "Relay-regeneration chain",
+        gain: "1000×+ in smoke",
+        desc: "Split the link into 1km hops with relay drones. Each hop resets the attenuation budget. The Aether core innovation.",
+        difficulty: "Novel — Aether IP"
+      });
+    }
+  } else {
+    improvements.push({
+      title: "Larger transmit array",
+      gain: "4× at 2×dia",
+      desc: "Doubling array diameter tightens the beam and quadruples received power. Dominant improvement for microwave.",
+      difficulty: "Size/weight tradeoff"
+    });
+    improvements.push({
+      title: "Larger receive rectenna",
+      gain: "Proportional",
+      desc: "Rectenna area directly sets how much of the beam is captured. Truck-deployable 50m² panels are feasible.",
+      difficulty: "Deployment logistics"
+    });
+    if (range > 0.5) {
+      improvements.push({
+        title: "Reduce range — use relay nodes",
+        gain: "16× at half range",
+        desc: "Microwave efficiency scales as range⁻⁴ in far-field. Halving range improves efficiency 16×. Use relay nodes at 500m spacing.",
+        difficulty: "Operational change"
+      });
+    }
+    improvements.push({
+      title: "Increase operating frequency to 35 GHz",
+      gain: "Tighter beam",
+      desc: "Higher frequency → shorter wavelength → smaller beam at range. Tradeoff: higher rain attenuation.",
+      difficulty: "System redesign"
+    });
+  }
+
+  return improvements;
+}
+
+function EfficiencyRoadmap({ result }: { result: SimResult }) {
+  const eff = result.system_efficiency_pct;
+  const mode = result.mode;
+  const condition = result.condition;
+  const range = result.range_km;
+
+  const whyLow = getEfficiencyExplanation(mode, eff, condition, range);
+  const improvements = getImprovements(mode, condition, range, eff);
+
+  return (
+    <div className="space-y-4">
+      {/* Current vs possible */}
+      <div>
+        <div className="flex justify-between text-xs mb-1" style={{ color: "var(--text-muted)" }}>
+          <span>Current: {eff.toFixed(1)}%</span>
+          <span>Theoretical max: ~35%</span>
+        </div>
+        <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--surface-2)" }}>
+          <div
+            className="h-full rounded-full transition-all"
+            style={{
+              width: `${Math.min(eff / 35 * 100, 100)}%`,
+              background: "linear-gradient(to right, var(--accent), #22c55e)"
+            }}
+          />
+        </div>
+        <div className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+          Real-world ceiling ~20% (DARPA POWER PRAD 2025)
+        </div>
+      </div>
+
+      {/* Why */}
+      <div className="rounded-lg p-3 text-xs leading-relaxed" style={{ background: "var(--surface-2)", color: "var(--text-muted)" }}>
+        <span className="font-medium" style={{ color: "var(--text)" }}>Why {eff.toFixed(1)}%: </span>
+        {whyLow}
+      </div>
+
+      {/* Improvements */}
+      <div className="space-y-2">
+        <div className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+          What would help most
+        </div>
+        {improvements.map((imp, i) => (
+          <div key={i} className="flex items-center gap-3 rounded-lg px-3 py-2.5" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+            <div className="text-xs font-mono w-16 shrink-0" style={{ color: "#4ade80" }}>+{imp.gain}</div>
+            <div>
+              <div className="text-sm font-medium" style={{ color: "var(--text)" }}>{imp.title}</div>
+              <div className="text-xs" style={{ color: "var(--text-muted)" }}>{imp.desc}</div>
+            </div>
+            <div className="ml-auto text-xs" style={{ color: "var(--text-subtle)" }}>{imp.difficulty}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FinancialsTab({ result }: { result: SimResult }) {
+  const convoys = result.convoys_eliminated_yr;
+  const daysPerConvoy = convoys > 0 ? Math.round(365 / convoys) : null;
+  const fuelL = result.fuel_saved_l_day * 365;
+  const paybackMonths = result.total_value_yr_usd > 0 ? Math.round((750000 / result.total_value_yr_usd) * 12) : null;
+
+  const items = [
+    {
+      label: "Convoys eliminated",
+      value: `${convoys.toFixed(0)} per year`,
+      explain: convoys >= 1
+        ? `That's one fewer fuel resupply mission every ${daysPerConvoy} day${daysPerConvoy === 1 ? "" : "s"}. Each convoy means a crew driving to a forward position — the primary IED exposure risk in most operational environments.`
+        : `At this power level the system offsets a portion of FOB fuel demand, reducing convoy frequency without eliminating runs entirely.`,
+    },
+    {
+      label: "Fuel cost saved",
+      value: `$${fmt(result.fuel_cost_saved_yr_usd)} per year`,
+      explain: `The DoD fully-burdened fuel cost is $12/L — this covers transport, security, personnel, and supply chain overhead, not just pump price. ${fuelL > 0 ? `That's ${Math.round(fuelL).toLocaleString()} liters of diesel per year that never needs to reach the FOB.` : ""}`,
+    },
+    {
+      label: "Convoy cost saved",
+      value: `$${fmt(result.convoy_cost_saved_yr_usd)} per year`,
+      explain: `DoD estimates $600/mile for fully-burdened convoy operations. A 100km round-trip resupply run costs roughly $37,200 when you factor in vehicles, fuel, personnel, security escorts, and risk premium.`,
+    },
+    {
+      label: "Total annual value",
+      value: `$${fmt(result.total_value_yr_usd)}`,
+      explain: paybackMonths
+        ? `A deployable WPT system in this class typically costs $500k–$2M. At this savings rate, payback on a $750k system takes approximately ${paybackMonths} month${paybackMonths === 1 ? "" : "s"} — before accounting for risk reduction value.`
+        : `Savings accumulate once the system is operational. The economic case strengthens at higher power delivery.`,
+      highlight: true,
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {items.map((item, i) => (
+        <div key={i} className="space-y-1">
+          <div className="flex justify-between items-baseline">
+            <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>{item.label}</span>
+            <span
+              className="text-sm font-mono font-semibold"
+              style={{ color: item.highlight ? "var(--green)" : "var(--text)" }}
+            >
+              {item.value}
+            </span>
+          </div>
+          <p className="text-xs leading-relaxed" style={{ color: "var(--text-subtle)" }}>
+            {item.explain}
+          </p>
+          {i < items.length - 1 && <div style={{ borderBottom: "1px solid var(--border)", marginTop: "0.75rem" }} />}
+        </div>
+      ))}
+      <div className="text-xs pt-1" style={{ color: "var(--text-subtle)", borderTop: "1px solid var(--border)" }}>
+        Source: RAND Corporation fully-burdened fuel cost · DoD convoy cost estimate $600/mile · FOB baseline 15 kW load
+      </div>
+    </div>
+  );
+}
+
+function SavingsSection({ result }: { result: SimResult }) {
+  const [tab, setTab] = useState<"financials" | "roadmap">("financials");
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+      {/* Tab bar */}
+      <div className="flex" style={{ borderBottom: "1px solid var(--border)" }}>
+        <button
+          onClick={() => setTab("financials")}
+          className="px-4 py-2.5 text-xs font-medium transition-colors"
+          style={
+            tab === "financials"
+              ? { color: "var(--text)", borderBottom: "2px solid var(--accent)" }
+              : { color: "var(--text-muted)" }
+          }
+        >
+          Financials
+        </button>
+        <button
+          onClick={() => setTab("roadmap")}
+          className="px-4 py-2.5 text-xs font-medium transition-colors"
+          style={
+            tab === "roadmap"
+              ? { color: "var(--text)", borderBottom: "2px solid var(--accent)" }
+              : { color: "var(--text-muted)" }
+          }
+        >
+          Efficiency Roadmap
+        </button>
+      </div>
+
+      <div className="p-5">
+        {tab === "financials" ? (
+          <FinancialsTab result={result} />
+        ) : (
+          <EfficiencyRoadmap result={result} />
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Result sub-components ─────────────────────────────────────────────────────
 
 function PlainEnglishSummary({ result }: { result: SimResult }) {
@@ -251,7 +492,11 @@ function PlainEnglishSummary({ result }: { result: SimResult }) {
   if (!feasible || dc < 0.1) {
     text = `At ${result.range_km.toFixed(1)} km in ${result.condition} conditions, ${result.mode} WPT cannot deliver useful power with this hardware configuration. ${result.feasibility?.best_mode_reason || ""}`;
   } else if (eff < 5) {
-    text = `This scenario is physically possible but marginal — only ${eff.toFixed(1)}% of input power reaches the receiver. For tactical FOB use, consider adjusting range or switching to ${result.feasibility?.best_mode_for_range ?? "the other mode"}.`;
+    const bestMode = result.feasibility?.best_mode_for_range;
+    const modeHint = bestMode && bestMode !== result.mode
+      ? ` Consider switching to ${bestMode} for this scenario.`
+      : ` Consider reducing range for better efficiency.`;
+    text = `This scenario is physically possible but marginal — only ${eff.toFixed(1)}% of input power reaches the receiver.${modeHint}`;
   } else {
     const convoyLine =
       convoys >= 1
@@ -513,14 +758,14 @@ function ResultPanel({ result }: { result: SimResult }) {
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <KPI
           label="Convoys eliminated"
-          value={`${result.convoys_eliminated_yr.toFixed(0)}/yr`}
+          value={`${result.convoys_eliminated_yr.toFixed(0)} per year`}
           sub="↓ IED exposure per mission"
           highlight={feasible && result.convoys_eliminated_yr >= 1}
         />
         <KPI
           label="Fuel resupply saved"
           value={`${result.fuel_saved_l_day.toFixed(0)} L/day`}
-          sub="generator diesel offset"
+          sub="generator diesel per day"
         />
         <KPI
           label="FOB coverage"
@@ -547,6 +792,9 @@ function ResultPanel({ result }: { result: SimResult }) {
 
       {/* Plain-English interpretation */}
       <PlainEnglishSummary result={result} />
+
+      {/* Financials + Efficiency Roadmap tabs */}
+      <SavingsSection result={result} />
 
       {/* Power chart */}
       <PowerChart result={result} />
@@ -886,7 +1134,7 @@ function OptimizedResultPanel({ result }: { result: OptimizedResult }) {
           <div className="space-y-2">
             <Row label="Efficiency" value={`${base.system_efficiency_pct.toFixed(1)}%`} />
             <Row label="DC delivered" value={`${base.dc_power_delivered_kw.toFixed(2)} kW`} />
-            <Row label="Convoys cut" value={`${base.convoys_eliminated_yr?.toFixed(0) ?? "—"}/yr`} />
+            <Row label="Convoys cut" value={`${base.convoys_eliminated_yr?.toFixed(0) ?? "—"} per year`} />
             <Row label="Annual value" value={`$${fmt(base.total_value_yr_usd)}`} />
           </div>
         </div>
@@ -895,7 +1143,7 @@ function OptimizedResultPanel({ result }: { result: OptimizedResult }) {
           <div className="space-y-2">
             <Row label="Efficiency" value={`${optimized.system_efficiency_pct.toFixed(1)}%`} />
             <Row label="DC delivered" value={`${optimized.dc_power_delivered_kw.toFixed(2)} kW`} />
-            <Row label="Convoys cut" value={`${optimized.convoys_eliminated_yr?.toFixed(0) ?? "—"}/yr`} />
+            <Row label="Convoys cut" value={`${optimized.convoys_eliminated_yr?.toFixed(0) ?? "—"} per year`} />
             <Row label="Annual value" value={`$${fmt(optimized.total_value_yr_usd)}`} />
           </div>
         </div>
@@ -924,6 +1172,315 @@ function OptimizedResultPanel({ result }: { result: OptimizedResult }) {
   );
 }
 
+// ── Use Cases ─────────────────────────────────────────────────────────────────
+
+type UseCase = {
+  id: string;
+  title: string;
+  tag: string;
+  tagColor: string;
+  oneLiner: string;
+  keyStats: string;
+  presets: { mode: "laser" | "microwave" | "compare"; rangeM: number; powerKw: number; condition: string };
+  explanation: string;
+  math: string;
+  spacePreset?: { orbit: string; spaceMode: "laser" | "microwave" };
+};
+
+const USE_CASES: UseCase[] = [
+  {
+    id: "drone_isr",
+    title: "Persistent Drone ISR",
+    tag: "Easiest · Active DARPA program",
+    tagColor: "green",
+    oneLiner: "Keep surveillance drones airborne indefinitely — no RTB to recharge.",
+    keyStats: "24/7 loiter vs 90-min battery",
+    presets: { mode: "laser", rangeM: 300, powerKw: 0.5, condition: "clear" },
+    explanation: `An ISR (Intelligence, Surveillance, Reconnaissance) drone flies 90–120 minutes on battery before returning to base to recharge. During that RTB window, the mission goes dark.
+
+WPT from a ground station at 100–500m beams power up to the hovering drone continuously. The drone never lands. The mission never stops.
+
+DARPA committed active funding to this exact use case in 2024 (far-field wireless power beaming to UAVs in flight). PowerLight Technologies demonstrated kilowatt-class laser WPT to a UAV under CENTCOM sponsorship in 2025.`,
+    math: `Drone power draw: ~200–500W continuous flight (DJI Matrice / Skydio X10 class)
+Required WPT delivery: 300–600W at receiver
+Range: 100–500m (ground station to hovering drone)
+At 300m, laser beam radius: ~0.3mm–2cm → receiver captures nearly all power
+System efficiency at 300m clear sky: 15–25%
+Required optical power: ~2–3 kW from ground transmitter
+Transmitter size: ~0.5m telescope, 5 kg — fits on a vehicle or tripod
+Loiter extension: battery → 90 min; WPT → unlimited
+Real-world anchor: PowerLight PTROL-UAS (2025), DARPA FENCE program (2024)`,
+  },
+  {
+    id: "remote_sensor",
+    title: "Remote Sensor Networks",
+    tag: "No convoy needed",
+    tagColor: "blue",
+    oneLiner: "Power border sensors and ISR nodes indefinitely — no battery swaps, no resupply.",
+    keyStats: "Eliminates physical access missions",
+    presets: { mode: "microwave", rangeM: 1000, powerKw: 0.1, condition: "rain" },
+    explanation: `Acoustic, seismic, radar, and SIGINT sensors are deployed on hilltops, ridgelines, and border terrain. Currently powered by batteries (replaced every few weeks by exposed personnel) or solar panels (visible from satellite, easily targeted).
+
+WPT from a concealed or elevated transmitter powers them indefinitely with zero physical access required. Fixed geometry means the aperture is optimized once. Microwave works in all weather — rain, fog, dust — making it ideal for persistent unattended sensor networks.
+
+The value isn't just power — it's eliminating the resupply mission that exposes soldiers to IED risk.`,
+    math: `Typical sensor power: 10–200W continuous (radar node: ~100W, acoustic: ~10W)
+Target: 100W delivered at 1 km in rain
+Microwave at 1 km, rain (50mm/hr): 0.44 dB/km attenuation — essentially no weather degradation
+Required TX array: ~50m² phased array, vehicle-mountable
+Fixed geometry → beam pointed once, locked permanently
+No pointing/tracking required (sensor doesn't move)
+Comparison: battery replacement mission every 3 weeks at $15k/mission → $260k/yr per node
+WPT system cost: ~$200k one-time, then $0 in resupply missions
+Payback period: < 1 year per node`,
+  },
+  {
+    id: "shipboard",
+    title: "Shipboard Drone Charging",
+    tag: "Navy · Short range · High efficiency",
+    tagColor: "blue",
+    oneLiner: "Recharge naval drones mid-hover without physical connectors or deck handling.",
+    keyStats: "10–50m range · 30%+ efficiency",
+    presets: { mode: "laser", rangeM: 500, powerKw: 1, condition: "clear" },
+    explanation: `Navy ships launch and recover drones continuously for ISR, ASW (anti-submarine warfare), and logistics. Physical connectors require deck handling — a hazardous operation in sea state, consuming deck crew time and limiting sortie rate.
+
+WPT at 10–50m (drone hovering near the ship's mast or deck edge) eliminates the connector entirely. The drone charges while hovering, keeping optics stable and reducing mechanical wear on landing gear.
+
+Very short range means excellent physics: the beam is tight, efficiency is high, hardware is compact. This is the most physically favorable WPT scenario in the DoD inventory.`,
+    math: `Range: 10–50m (drone hovering near ship)
+At 30m, laser beam radius: ~0.03mm — entire beam fits on a coin
+Geometric capture efficiency: >99%
+System efficiency at 30m: 30–40% (near theoretical maximum)
+Drone power: 500W–2kW (MQ-8 Fire Scout class)
+Required transmitter: 2–5 kW optical, 0.3m aperture
+Weight: ~3 kg transmitter pod (mast-mounted)
+No weather block at 30m — even fog over 30m is only 0.3–0.9 dB
+Current alternative: physical connectors + deck crew = 15 min turnaround
+WPT: continuous charge, zero deck handling, sub-1-min power-up`,
+  },
+  {
+    id: "fob_power",
+    title: "FOB Power Supply",
+    tag: "Primary mission · DoD Tier 1",
+    tagColor: "indigo",
+    oneLiner: "Eliminate fuel convoys to forward operating bases — the most dangerous logistics mission in the DoD.",
+    keyStats: "~48 convoys/yr eliminated at 2km",
+    presets: { mode: "laser", rangeM: 2000, powerKw: 15, condition: "clear" },
+    explanation: `Every fuel convoy to a Forward Operating Base (FOB) is a target. The DoD's fully-burdened fuel cost is $12/L — but the real cost is the convoy itself: IED exposure, personnel risk, logistics complexity.
+
+A 15 kW laser WPT system at 2km delivers enough power for a small platoon-level FOB, eliminating the resupply mission for electricity entirely. The transmitter stays at a protected position (main base, vehicle, or elevated platform) and beams power forward.
+
+In clear conditions, laser WPT at 2km delivers target power at 6–8% system efficiency. The system pays for itself in eliminated convoy costs within 12–18 months.`,
+    math: `FOB power demand: 15 kW (platoon-level, MEP-804A generator equivalent)
+Generator fuel burn: 4.5 L/hr at full load = 108 L/day
+Convoy threshold: 500 L per resupply run = convoy every ~4.6 days
+Annual convoys: ~79 resupply missions to sustain one small FOB
+WPT at 2km clear sky: delivers 15 kW, eliminates all convoy missions
+Fuel cost saved: $12/L × 39,420 L/yr = $473k/yr
+Convoy cost saved: $600/mile × 62 miles × 79 convoys = $2.93M/yr
+Total annual value: ~$3.4M/yr per FOB
+DoD fully-burdened fuel cost reference: RAND Corporation (2012), inflation-adjusted 2025`,
+  },
+  {
+    id: "battlefield_relay",
+    title: "Battlefield Relay Chain",
+    tag: "Novel · Relay-regeneration",
+    tagColor: "orange",
+    oneLiner: "Deliver power through smoke and terrain using autonomous drone relay hops — the architecture no one else has built.",
+    keyStats: "5km through smoke: impossible direct, possible via relay",
+    presets: { mode: "compare", rangeM: 2000, powerKw: 5, condition: "smoke" },
+    explanation: `Direct WPT through battlefield smoke fails completely — 8 dB/km extinction at 1070nm means 40 dB loss over 5km. Zero power delivered.
+
+The relay-regeneration architecture solves this: instead of one 5km link, run 5 × 1km links with autonomous drone relay nodes between them. Each relay receives power, buffers it, and retransmits. Each 1km segment only loses 8 dB — regenerated at each hop.
+
+Using 1550nm (eye-safe, lower smoke scattering than 1070nm, telecom-grade erbium fiber amplifiers): per-segment loss drops further. No existing program uses this architecture. It's the core Aether innovation.`,
+    math: `Direct laser (1070nm) at 5km in smoke (8 dB/km): loss = 40 dB → 0.01% power delivered
+5-relay chain (1km segments): loss = 8 dB/segment → 15.8% per segment, regenerated
+Net end-to-end after 5 hops (15% conversion loss/relay): ~3–5% of source power
+At 10 kW source: 300–500W delivered at 5km through smoke (vs ~1W direct)
+1550nm advantage: ~40% lower smoke extinction vs 1070nm
+Eye safety: 1550nm Class 1 eye-safe at higher power levels
+Component cost: EDFA amplifiers ~$5k/unit (telecom commodity)
+Relay drone payload: ~5 kg (PV + buffer + retransmit laser)
+Phase 1 demo: 100m links, smoke chamber, <$250k, 6 months`,
+  },
+  {
+    id: "sof_outpost",
+    title: "SOF Austere Outpost",
+    tag: "Special Ops · Silent power",
+    tagColor: "red",
+    oneLiner: "Power a special operations patrol base with zero acoustic or thermal signature — the generator is a liability.",
+    keyStats: "Generator noise = position compromise",
+    presets: { mode: "laser", rangeM: 800, powerKw: 3, condition: "clear" },
+    explanation: `A Special Operations Forces patrol base runs on strict signature management. A diesel generator at 70 dB can be detected at 400m. Its thermal signature is visible to any FLIR sensor. It consumes fuel that requires resupply — every resupply mission is exposure.
+
+WPT from a concealed elevated transmitter (hilltop, vehicle-mounted, or tethered drone) delivers up to 3–5 kW silently. No engine. No exhaust. No supply convoy. The transmitter operates from a defended position 0.5–2 km away — outside any perimeter the SOF team is trying to hide from.
+
+This is a USSOCOM procurement target. Silent, persistent power for austere deployments is a listed capability gap. AFWERX has funded related research; SOCOM acquisition pathway is SOFWERX rapid fielding.`,
+    math: `SOF patrol base power: 3–5 kW (SATCOM, NV charging, medical, computing, comms)
+NV charging: ~100W × 12 units = 1.2 kW
+SATCOM terminal: 500W
+Computing + comms: 1 kW
+Margin / reserve: 300W
+Total: ~3 kW sustained
+
+Generator acoustic signature: 68–74 dB @ 7m → detectable at 300–500m in quiet terrain
+Generator thermal signature: detectable by any FLIR system (engine temp ~200°C)
+
+WPT at 800m clear sky: laser system delivers 3 kW target power
+Transmitter: 0.3m telescope, vehicle-mounted or tripod, ~8 kg
+Transmitter location: masked position 800m away, concealed, powered by main base
+
+Annual value (eliminating signature risk): not fuel — OPSEC. One compromised position ≈ mission failure.
+AFWERX precedent: Silent power for austere forward sites — SBIR topic active since FY2023
+USSOCOM: Special Operations Forces Acquisition (SOFARS) rapid fielding pathway <12 months`,
+  },
+  {
+    id: "counter_uas",
+    title: "Counter-UAS Defense",
+    tag: "C-UAS · Active defense",
+    tagColor: "red",
+    oneLiner: "Power a forward laser C-UAS weapon from protected standoff — no exposed cables, no generator at the weapon site.",
+    keyStats: "1–10 kW to C-UAS at 1km standoff",
+    presets: { mode: "laser", rangeM: 1000, powerKw: 10, condition: "clear" },
+    explanation: `Counter-UAS laser weapons need power. The problem: placing a generator or running cables to a forward weapon emplacement exposes equipment and personnel. The generator is a target. The cable is a trip hazard and a vulnerability.
+
+WPT solves the last-meter power problem for directed energy C-UAS systems. The power generator stays at a protected position 0.5–2 km back. A laser power beam delivers 5–10 kW to the C-UAS emitter at the forward weapon site. No cable. No generator at the weapon. Weapons can be repositioned without rerunning power infrastructure.
+
+C-UAS is the fastest-growing segment of the DoD procurement budget post-Ukraine. Drone swarms are the defining threat. Power delivery to forward C-UAS positions is a real, funded acquisition need.`,
+    math: `C-UAS laser weapon power: 5–25 kW (SkyWiper class: 10 kW, Raytheon HELWS: 20 kW+)
+Low-power C-UAS (Drone Dome, LOCUST): 1–5 kW
+
+WPT scenario:
+- Source: 10 kW electrical input, 1km range, clear sky
+- Laser WPT system efficiency at 1km: ~12–18%
+- DC delivered to C-UAS weapon: ~1.2–1.8 kW
+- Sufficient for: small C-UAS laser (1kW class) + tracking electronics
+
+For higher power: relay node at 500m; each hop adds 12–18% link efficiency
+To deliver 10 kW to C-UAS at 1km: requires ~65 kW source → needs multi-link or near-field
+
+Key insight: WPT is not the primary weapon — it powers the C-UAS. Even 1–2 kW delivered to a forward position eliminates the exposure of fuel/cable.
+Budget: Army C-UAS FY25 budget: $1.7B; power delivery is the bottleneck
+References: DARPA ARES (C-UAS power), Army IFPC program, DoD Joint C-sUAS Office (JCO)`,
+  },
+  {
+    id: "space_scale",
+    title: "Space-to-Earth Scale",
+    tag: "Future vision · LEO proven",
+    tagColor: "purple",
+    oneLiner: "From proven FOB systems to orbital power delivery — the same physics at planetary scale.",
+    keyStats: "NRL PRAM: 10W from ISS (2021)",
+    presets: { mode: "laser", rangeM: 2000, powerKw: 1, condition: "clear" },
+    spacePreset: { orbit: "iss_leo", spaceMode: "laser" },
+    explanation: `The same relay-regeneration architecture that works at 5km on the ground scales to Low Earth Orbit at 400km. The physics difference: FSPL over the full orbital distance, but atmospheric attenuation only through the last ~10–20km (vertical path through the atmosphere).
+
+NRL demonstrated 10W of laser WPT from the ISS in 2021. Caltech MAPLE demonstrated the first in-space WPT in 2023. Aetherflux (founded by Robinhood's Baiju Bhatt, $60M raised) is targeting a 1kW LEO demo in 2026.
+
+Aether's path: prove relay-regeneration on the ground (FOB case) → unit costs drop with DoD production volume → scale the same architecture to LEO. The ground program de-risks and funds the space program.`,
+    math: `LEO altitude: 408km (ISS), 600km (standard)
+At 600km, 2m aperture laser, 1070nm: beam radius at ground = 320m
+Capture with 10m receiver: 0.046% geometric efficiency
+Required optical power for 1kW delivered: ~2.2 MW (LEO is hard)
+GEO (35,786km): requires 2.6km TX array + 3.5km² rectenna (JAXA SSPS concept)
+The DoD path: ground WPT proven → costs fall → LEO becomes commercially viable
+Reference: NRL PRAM 2021, Caltech MAPLE 2023, Aetherflux 2026 demo target
+JAXA SSPS: 1 GW at GEO → 1 GW delivered (national grid scale, 2040s target)`,
+  },
+];
+
+const UC_TAG_COLORS: Record<string, string> = {
+  green:  "bg-green-950 text-green-400 border-green-900",
+  blue:   "bg-blue-950 text-blue-400 border-blue-900",
+  indigo: "bg-indigo-950 text-indigo-400 border-indigo-900",
+  orange: "bg-orange-950 text-orange-400 border-orange-900",
+  purple: "bg-purple-950 text-purple-400 border-purple-900",
+  red:    "bg-red-950 text-red-400 border-red-900",
+};
+
+function UseCaseBar({
+  selected,
+  onSelect,
+}: {
+  selected: string | null;
+  onSelect: (uc: UseCase) => void;
+}) {
+  return (
+    <div className="mb-8">
+      <div className="text-xs font-medium uppercase tracking-wider mb-3" style={{ color: "var(--text-subtle)" }}>
+        Use Cases
+      </div>
+      <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: "thin", WebkitMaskImage: "linear-gradient(to right, black 85%, transparent 100%)" }}>
+        {USE_CASES.map((uc) => {
+          const isSelected = selected === uc.id;
+          return (
+            <button
+              key={uc.id}
+              onClick={() => onSelect(uc)}
+              className={`flex-shrink-0 w-48 text-left rounded-xl border p-4 transition-all ${
+                isSelected ? "" : ""
+              }`}
+              style={
+                isSelected
+                  ? { border: "1px solid var(--accent)", background: "var(--accent-dim)" }
+                  : { border: "1px solid var(--border)", background: "var(--surface)" }
+              }
+              onMouseEnter={(e) => {
+                if (!isSelected) (e.currentTarget as HTMLElement).style.borderColor = "var(--border-bright)";
+              }}
+              onMouseLeave={(e) => {
+                if (!isSelected) (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+              }}
+            >
+              <div className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border mb-2 ${UC_TAG_COLORS[uc.tagColor]}`}>
+                {uc.tag}
+              </div>
+              <div className="text-sm font-semibold leading-snug mb-1" style={{ color: "var(--text)" }}>
+                {uc.title}
+              </div>
+              <div className="text-xs leading-snug" style={{ color: "var(--text-muted)" }}>
+                {uc.oneLiner}
+              </div>
+              <div className="mt-2 text-xs font-mono" style={{ color: "var(--accent)" }}>
+                {uc.keyStats}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ScenarioContext({ uc }: { uc: UseCase }) {
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center justify-between px-4" style={{ borderBottom: "1px solid var(--border)" }}>
+        <span
+          className="py-2.5 text-xs font-medium"
+          style={{ color: "var(--text)", borderBottom: "2px solid var(--accent)" }}
+        >
+          The Math
+        </span>
+        <a
+          href="/qa"
+          className="text-xs transition-colors"
+          style={{ color: "var(--text-subtle)" }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--text-muted)"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--text-subtle)"; }}
+        >
+          Full context → Reference Q&amp;A
+        </a>
+      </div>
+      <div className="p-5">
+        <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text-muted)" }}>
+          {uc.math}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SimulatorPage() {
@@ -941,6 +1498,9 @@ export default function SimulatorPage() {
   const [orbit, setOrbit] = useState("leo");
   const [spaceMode, setSpaceMode] = useState<"laser" | "microwave">("laser");
 
+  // Use case selection
+  const [selectedUseCase, setSelectedUseCase] = useState<UseCase | null>(null);
+
   // Optimized mode sub-state
   const [baseMode, setBaseMode] = useState<"laser" | "microwave">("laser");
   const [optimizations, setOptimizations] = useState<string[]>(["adaptive_optics", "inp_cells", "large_aperture"]);
@@ -949,6 +1509,46 @@ export default function SimulatorPage() {
     setOptimizations((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
     );
+  }
+
+  function handleUseCaseSelect(uc: UseCase) {
+    setSelectedUseCase(uc);
+    const newMode = uc.spacePreset && uc.id === "space_scale" ? ("space" as AppMode) : (uc.presets.mode as AppMode);
+    const newRange = uc.presets.rangeM;
+    const newPower = uc.presets.powerKw;
+    const newCondition = uc.presets.condition;
+    setMode(newMode);
+    setRangeM(newRange);
+    setPowerKw(newPower);
+    setCondition(newCondition);
+    if (uc.spacePreset && uc.id === "space_scale") {
+      setOrbit(uc.spacePreset.orbit);
+      setSpaceMode(uc.spacePreset.spaceMode);
+    }
+    // Run directly with preset values — avoids stale closure on state
+    runSimWith({ mode: newMode, rangeM: newRange, powerKw: newPower, condition: newCondition });
+  }
+
+  async function runSimWith({ mode: m, rangeM: r, powerKw: p, condition: c }: { mode: AppMode; rangeM: number; powerKw: number; condition: string }) {
+    setLoading(true);
+    setError(null);
+    try {
+      let data: unknown;
+      if (m === "space") {
+        data = await simulateSpace({ mode: spaceMode, orbit, power_kw: p, condition: c });
+      } else if (m === "optimized") {
+        data = await simulateOptimized({ mode: baseMode, range_m: r, power_kw: p, condition: c, optimizations });
+      } else if (m === "compare") {
+        data = await simulate({ mode: "compare", range_m: r, power_kw: p, condition: c });
+      } else {
+        data = await simulate({ mode: m, range_m: r, power_kw: p, condition: c });
+      }
+      setResult(data as SimResult | CompareResult | SpaceResult | OptimizedResult);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function runSim() {
@@ -994,6 +1594,15 @@ export default function SimulatorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Auto-recalculate when mode or condition changes (if we've already run once)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (didAutoRun.current && result !== null) {
+      runSim();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, condition]);
+
   const modeDesc: Record<AppMode, string> = {
     laser: "Near-infrared beam (1070 nm). Best efficiency at range in clear conditions.",
     microwave: "5.8 GHz phased array. All-weather, effective within ~500 m with portable hardware.",
@@ -1015,33 +1624,68 @@ export default function SimulatorPage() {
               WPT Simulator
             </span>
           </div>
-          <span
-            className="text-xs px-3 py-1 rounded-full"
-            style={{ color: "var(--text-subtle)", background: "var(--surface)", border: "1px solid var(--border)" }}
-          >
-            Physics v3 · 2025
-          </span>
+          <div className="flex items-center gap-3">
+            <span
+              className="text-xs px-3 py-1 rounded-full"
+              style={{ color: "var(--text-subtle)", background: "var(--surface)", border: "1px solid var(--border)" }}
+            >
+              Physics v3 · 2025
+            </span>
+            <a
+              href="/qa"
+              className="text-xs transition-colors"
+              style={{ color: "var(--text-subtle)" }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--text-muted)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--text-subtle)"; }}
+            >
+              Reference Q&amp;A
+            </a>
+          </div>
         </div>
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-12">
-        {/* Hero — FOB-first framing */}
-        <div className="mb-10 max-w-2xl">
-          <h1 className="text-3xl font-bold leading-snug" style={{ color: "var(--text)" }}>
-            Deliver power to a forward operating base —<br />
-            <span style={{ color: "var(--accent)" }}>no fuel convoys required</span>
-          </h1>
-          <p className="mt-3 text-base leading-relaxed" style={{ color: "var(--text-muted)" }}>
-            Aether models laser and microwave wireless power transmission for defense logistics.
-            Calculate how much power reaches the FOB, what hardware it takes, and how many
-            dangerous resupply missions it eliminates.
-          </p>
-          <div className="flex gap-8 mt-6 flex-wrap">
-            <Stat label="Convoys eliminated/yr" value="48+" sub="per 15 kW laser system" />
-            <Stat label="Fuel saved per day" value="300+ L" sub="diesel offset at 2 km" />
-            <Stat label="Real-world anchor" value="800 W @ 8.6 km" sub="DARPA POWER PRAD 2025" />
+        {/* Hero — FOB-first framing, or use-case context when a scenario is selected */}
+        {!selectedUseCase ? (
+          <div className="mb-10 max-w-2xl">
+            <h1 className="text-3xl font-bold leading-snug" style={{ color: "var(--text)" }}>
+              Deliver power to a forward operating base —<br />
+              <span style={{ color: "var(--accent)" }}>no fuel convoys required</span>
+            </h1>
+            <p className="mt-3 text-base leading-relaxed" style={{ color: "var(--text-muted)" }}>
+              Aether models laser and microwave wireless power transmission for defense logistics.
+              Calculate how much power reaches the FOB, what hardware it takes, and how many
+              dangerous resupply missions it eliminates.
+            </p>
+            <div className="flex gap-8 mt-6 flex-wrap">
+              <Stat label="Convoys eliminated per year" value="48+" sub="per 15 kW laser system" />
+              <Stat label="Fuel saved per day" value="300+ L" sub="diesel offset at 2 km" />
+              <Stat label="Real-world anchor" value="800 W @ 8.6 km" sub="DARPA POWER PRAD 2025" />
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="mb-10 max-w-2xl">
+            <div className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold border mb-3 ${UC_TAG_COLORS[selectedUseCase.tagColor]}`}>
+              {selectedUseCase.tag}
+            </div>
+            <h1 className="text-2xl font-bold leading-snug" style={{ color: "var(--text)" }}>
+              {selectedUseCase.title}
+            </h1>
+            <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
+              {selectedUseCase.oneLiner}
+            </p>
+            <button
+              onClick={() => setSelectedUseCase(null)}
+              className="mt-3 text-xs"
+              style={{ color: "var(--text-subtle)" }}
+            >
+              ← Back to overview
+            </button>
+          </div>
+        )}
+
+        {/* Use Case scenario browser */}
+        <UseCaseBar selected={selectedUseCase?.id ?? null} onSelect={handleUseCaseSelect} />
 
         <div className="grid lg:grid-cols-[380px_1fr] gap-8">
           {/* Config Panel */}
@@ -1269,10 +1913,17 @@ export default function SimulatorPage() {
 
             {result && !loading && (() => {
               const r = result as { mode: string };
-              if (r.mode === "compare") return <ComparePanel result={result as CompareResult} />;
-              if (r.mode === "optimized") return <OptimizedResultPanel result={result as OptimizedResult} />;
-              if (r.mode === "space_laser" || r.mode === "space_microwave") return <SpaceResultPanel result={result as SpaceResult} />;
-              return <ResultPanel result={result as SimResult} />;
+              let panel: React.ReactNode;
+              if (r.mode === "compare") panel = <ComparePanel result={result as CompareResult} />;
+              else if (r.mode === "optimized") panel = <OptimizedResultPanel result={result as OptimizedResult} />;
+              else if (r.mode === "space_laser" || r.mode === "space_microwave") panel = <SpaceResultPanel result={result as SpaceResult} />;
+              else panel = <ResultPanel result={result as SimResult} />;
+              return (
+                <div className="space-y-5">
+                  {panel}
+                  {selectedUseCase && <ScenarioContext uc={selectedUseCase} />}
+                </div>
+              );
             })()}
           </div>
         </div>

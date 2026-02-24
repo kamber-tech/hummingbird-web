@@ -550,7 +550,7 @@ export default function SimulatorPage() {
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-white">
-          Hummingbird Sim
+          Aether Sim
         </h1>
         <p className="text-gray-400 mt-1 text-lg">
           Wireless Power Transmission for Defense Logistics

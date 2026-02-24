@@ -1,5 +1,5 @@
 const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "https://hummingbird-sim-api.onrender.com";
+  process.env.NEXT_PUBLIC_API_URL || "https://aether-sim-api.onrender.com";
 
 export async function simulate(params: {
   mode: "laser" | "microwave" | "compare";

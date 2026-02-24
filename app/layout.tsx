@@ -6,7 +6,7 @@ import Link from "next/link";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Hummingbird Sim",
+  title: "Aether Sim",
   description: "Wireless Power Transmission for Defense Logistics",
 };
 
@@ -21,7 +21,7 @@ export default function RootLayout({
         <nav className="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-50">
           <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-8">
             <div className="flex items-center gap-2">
-              <span className="text-green-400 font-mono text-lg font-bold">⚡ HUMMINGBIRD</span>
+              <span className="text-green-400 font-mono text-lg font-bold">⚡ AETHER</span>
             </div>
             <div className="flex gap-6 text-sm">
               <Link href="/" className="text-gray-300 hover:text-green-400 transition-colors font-medium">

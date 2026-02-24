@@ -318,7 +318,7 @@ const LOSS_MECHANISMS = [
     icon: "◈",
     color: "#60a5fa",
     laser: "Clear: 0.02–0.07 dB/km (negligible). Haze: 0.5–2 dB/km. Smoke (1070 nm): 8 dB/km — 40 dB over 5 km. Rain blocks completely beyond 500 m (fog hard-block). Smoke is the mission killer.",
-    microwave: "Rain: 0.44 dB/km at 50 mm/hr (5.8 GHz). Even at 10 km in heavy rain: 4.4 dB total — 35% power loss. Fog: transparent. Smoke: nearly transparent. Microwave wins all-weather at short range.",
+    microwave: "Rain: 0.44 dB/km at 50 mm/hr (5.8 GHz). Even at 10 km in heavy rain: 4.4 dB total — ~64% power loss (leaves 36% of transmitted power). Fog: transparent. Smoke: nearly transparent. Microwave wins all-weather at short range.",
     formula: "P_atm = P_tx · 10^(−α·R / 10)  where  α [dB/km] = k · I^β  (ITU-R P.838-3)",
     fix: "1550 nm wavelength cuts smoke extinction 40% vs 1070 nm. Relay-regeneration defeats smoke at any range — each 1 km hop only loses 8 dB, then regenerated. Rain: switch to microwave at short range.",
   },

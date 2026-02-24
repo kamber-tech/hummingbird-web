@@ -212,7 +212,7 @@ The simulator uses 5.8 GHz exclusively. Future versions should add a frequency p
     a: `A complete 5 kW DC at receiver system at 2km in clear sky would require approximately:
 
 TRANSMITTER:
-• Fiber laser: Yb:fiber at 1070nm, ~15 kW optical output (at 35% wall-plug eff, need ~43 kW electrical input). IPG Photonics YLS-15000 class. Cost: ~$300–500k. Weight: ~150 kg. Power draw: 43 kW AC.
+• Fiber laser: Yb:fiber at 1070nm, ~15 kW optical output (at 40% wall-plug eff, need ~37.5 kW electrical input). IPG Photonics YLS-15000 class. Cost: ~$300–500k. Weight: ~150 kg. Power draw: ~38 kW AC.
 • Beam director: 0.5m aperture telescope with fast-steering mirror for tracking. $100–200k. Weight: 30–50 kg.
 • Adaptive optics (optional): deformable mirror + wavefront sensor. $200–400k. Improves delivered power 2–3×.
 • Cooling: liquid-cooled thermal management for laser and electronics. 30–50 kg.
@@ -776,7 +776,7 @@ Microwave: Friis transmission equation, phased array gain model (aperture effici
 
 Rectenna: power-density dependent efficiency curve (Dang et al. 2021): 85% at ≥2W, scaling to 52% at <25mW.
 
-System overhead: 0.65× multiplier applied to chain efficiency (accounts for real-world losses not in link budget). Efficiency capped at 35% (DARPA PRAD 2025 anchor).
+System overhead: 0.65× multiplier applied to chain efficiency (accounts for real-world losses not in link budget). Efficiency cap is range-dependent: 35/(1+R_km/10) — e.g., 29% @ 2 km, 19% @ 8.6 km (anchored to DARPA PRAD 2025 ~20% real-world).
 
 Economics: DoD fully-burdened fuel cost $12/L, convoy cost $600/mile × 62 miles, FOB load 15kW, fuel burn 4.5 L/hr.`,
   },
@@ -821,13 +821,13 @@ These gaps are documented and represent the next development priorities. Most im
 
 Adaptive optics (laser only): +2.5× Strehl ratio improvement. Based on AFRL measurements of AO pre-compensation for directed energy applications. This is an empirical multiplier, not a first-principles calculation — actual gain depends on Cn² and correction bandwidth.
 
-InP photovoltaic cells: efficiency multiplier of 55%/35% = 1.57× (vs default 35%). Based on Alta Devices/NextGen Solar measured 55.2% at 1070nm monochromatic illumination (2023). Commercially available but expensive (~$50k/m² vs $5k/m² for GaAs).
+InP photovoltaic cells: efficiency multiplier of 55%/50% = 1.10× (vs default 50% GaAs monochromatic). Based on Alta Devices/NextGen Solar measured 55.2% at 1070nm monochromatic illumination (2023). Note: the base GaAs monochromatic PV is already ~50% — much higher than broadband solar cells — so the InP upgrade is a modest 10% improvement. Commercially available but expensive (~$50k/m² vs $5k/m² for GaAs).
 
-Large aperture: 4× multiplier (doubling diameter → 4× area → 4× collected power). This is physically exact for the geometric collection term but assumes the larger aperture is achievable — at 2km, a 1m receiver is feasible; a 4m receiver requires a larger deployed structure.
+Large aperture: 2× efficiency improvement from larger optics (tighter beam divergence and reduced geometric loss at range). At short range the baseline already captures the full beam (geometric_collection = 1.0), so gain comes from beam shaping rather than pure area scaling.
 
 High power density rectenna (microwave only): 85%/65% = 1.31× (operating in the high-efficiency portion of the rectenna curve). Achievable by ensuring high power density at the rectenna — generally means shorter range or larger transmit array.
 
-All improvements are capped at 35% total system efficiency (the DARPA PRAD anchor — state-of-the-art demonstrated 2025). This prevents the optimizer from returning physically impossible numbers.
+All improvements are subject to a range-dependent efficiency cap: 33% @ 0.5 km, 29% @ 2 km, 19% @ 8.6 km — anchored to DARPA PRAD 2025 (~20% real-world). This prevents the optimizer from returning physically impossible numbers.
 
 Interpreting results: the optimized output shows what's achievable with a deliberate engineering effort using currently available components — not what comes off the shelf. The baseline shows what an unoptimized first-generation system would achieve.`,
   },

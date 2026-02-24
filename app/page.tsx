@@ -266,14 +266,14 @@ function getImprovements(mode: string, condition: string, range: number, _baseEf
     });
     improvements.push({
       title: "InP photovoltaic cells (55%)",
-      gain: "+57% eff",
-      desc: "Best-in-class monochromatic PV at 1070nm. Alta Devices/NextGen measured 55.2% in 2023. Default uses 35%.",
+      gain: "+10% eff",
+      desc: "Best-in-class monochromatic PV at 1070nm. Alta Devices/NextGen measured 55.2% in 2023. Default uses 50% GaAs (1.10× improvement to 55% InP).",
       difficulty: "Available now"
     });
     improvements.push({
       title: "Larger receive aperture",
-      gain: "4× at 2×dia",
-      desc: "Doubling receiver diameter quadruples collection area. Most impactful at long range where beam is wide.",
+      gain: "2× efficiency",
+      desc: "Doubling receiver diameter tightens the effective beam capture. At short range baseline already captures full beam — gain is from reduced divergence and tighter focus.",
       difficulty: "Hardware cost"
     });
     if (condition === "smoke" || condition === "fog") {
@@ -1287,7 +1287,7 @@ function OptimizedResultPanel({ result }: { result: OptimizedResult }) {
 
       {/* Physics note */}
       <div className="rounded-xl px-4 py-3 text-xs" style={{ background: "var(--accent-dim)", border: "1px solid rgba(99,102,241,0.2)", color: "var(--text-subtle)" }}>
-        Efficiency capped at 35% (above demonstrated state-of-art: DARPA PRAD 20%, JAXA MW 22%). 
+        Efficiency cap is range-dependent: 33% @ 0.5 km, 29% @ 2 km, 19% @ 8.6 km — anchored to DARPA PRAD 2025 (~20% real-world). 
         Optimized figures represent best-case hardware configurations; real deployments will vary.
       </div>
     </div>
@@ -1878,8 +1878,8 @@ export default function SimulatorPage() {
                   <div className="space-y-2.5 mt-2">
                     {[
                       { key: "adaptive_optics", label: "Adaptive optics", desc: "Laser turbulence pre-compensation (2.5× Strehl)" },
-                      { key: "inp_cells", label: "InP PV cells (55%)", desc: "Best-in-class monochromatic PV vs 35% baseline" },
-                      { key: "large_aperture", label: "Large aperture", desc: "2× diameter = 4× collection area" },
+                      { key: "inp_cells", label: "InP PV cells (55%)", desc: "Best-in-class monochromatic PV vs 50% GaAs baseline (1.10× gain)" },
+                      { key: "large_aperture", label: "Large aperture", desc: "2× area from larger optics — ~2× efficiency improvement" },
                       { key: "high_power_density", label: "High-density rectenna", desc: "85% RF-DC efficiency at full power" },
                     ].map((opt) => (
                       <label key={opt.key} className="flex items-start gap-2.5 cursor-pointer">

@@ -1226,10 +1226,10 @@ export default function SweepPage() {
                   { step: "Baseline (current simulator)", eff: "6–10%", delta: "" },
                   { step: "+ 1550 nm wavelength (AO-compatible EDFA system)", eff: "7–12%", delta: "+1–2 pts (lower atm loss + better AO response)" },
                   { step: "+ Adaptive optics (2.5× Strehl improvement)", eff: "15–28%", delta: "+8–16 pts (dominant gain at 2 km)" },
-                  { step: "+ InP PV cells (43% actual → 55% InP)", eff: "23–43%", delta: "+8–15 pts relative" },
-                  { step: "+ Larger aperture (0.3 → 0.5 m)", eff: "27–50%", delta: "+4–7 pts" },
-                  { step: "Total best-case (lab conditions, pre-dawn, low Cn²)", eff: "35–50%", delta: "Physics ceiling for the technology chain" },
-                  { step: "Total realistic fielded (daytime, moderate turbulence)", eff: "20–30%", delta: "DARPA PRAD 2025 anchor: ~20% real-world" },
+                  { step: "+ InP PV cells (43% actual → 47% InP, 1.10× gain)", eff: "17–31%", delta: "+1–3 pts (modest — base GaAs already optimized at 50%)" },
+                  { step: "+ Larger aperture (2× area, tighter beam)", eff: "23–29%", delta: "+4–8 pts (range-dependent cap limits gain at 2 km)" },
+                  { step: "Total best-case (lab conditions, pre-dawn, low Cn²)", eff: "25–35%", delta: "Range-dependent cap: 29% @ 2 km, 19% @ 8.6 km" },
+                  { step: "Total realistic fielded (daytime, moderate turbulence)", eff: "15–25%", delta: "DARPA PRAD 2025 anchor: ~20% real-world @ 8.6 km" },
                 ].map((row, i) => (
                   <div
                     key={i}

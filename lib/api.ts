@@ -16,6 +16,42 @@ export async function simulate(params: {
   return res.json();
 }
 
+export async function simulateSpace(params: {
+  mode: "laser" | "microwave";
+  orbit: string;
+  power_kw: number;
+  condition: string;
+  laser_aperture_m?: number;
+  laser_rx_aperture_m?: number;
+  mw_array_diameter_m?: number | null;
+  mw_rectenna_area_m2?: number | null;
+  zenith_angle_deg?: number;
+}) {
+  const res = await fetch(`${API_URL}/simulate/space`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function simulateOptimized(params: {
+  mode: "laser" | "microwave";
+  range_m: number;
+  power_kw: number;
+  condition: string;
+  optimizations: string[];
+}) {
+  const res = await fetch(`${API_URL}/simulate/optimized`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function sweep(mode: string, power_kw: number) {
   const res = await fetch(`${API_URL}/sweep?mode=${mode}&power_kw=${power_kw}`);
   if (!res.ok) throw new Error(await res.text());

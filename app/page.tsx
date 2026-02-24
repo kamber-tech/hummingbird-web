@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { simulate } from "@/lib/api";
+import { useState, useEffect, useRef } from "react";
+import { simulate, simulateSpace, simulateOptimized } from "@/lib/api";
 import {
   BarChart,
   Bar,
@@ -11,7 +11,10 @@ import {
   Tooltip,
   ResponsiveContainer,
   Cell,
+  Legend,
 } from "recharts";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type LossBudget = Record<string, number | string | null>;
 type RequiredHardware = Record<string, string | number>;
@@ -59,6 +62,49 @@ type CompareResult = {
   microwave: SimResult;
 };
 
+type SpaceResult = {
+  mode: "space_laser" | "space_microwave";
+  orbit: string;
+  orbit_name: string;
+  altitude_km: number;
+  target_power_kw: number;
+  dc_power_delivered_kw: number;
+  electrical_input_kw: number;
+  system_efficiency_pct: number;
+  beam_radius_at_ground_m: number;
+  condition: string;
+  wpt_coverage_pct: number;
+  fuel_saved_l_day: number;
+  fuel_saved_l_yr: number;
+  convoys_eliminated_yr: number;
+  fuel_cost_saved_yr_usd: number;
+  convoy_cost_saved_yr_usd: number;
+  total_value_yr_usd: number;
+  required_hardware?: Record<string, string | number>;
+  link_budget?: Record<string, number>;
+  context?: Record<string, string>;
+  error?: string;
+};
+
+type OptimizedResult = {
+  mode: "optimized";
+  base: SimResult;
+  optimized: SimResult & {
+    optimizations_applied: string[];
+    improvement_notes: string[];
+    baseline_efficiency_pct: number;
+    efficiency_gain_factor: number;
+  };
+  improvement_summary: {
+    baseline_eff_pct: number;
+    optimized_eff_pct: number;
+    gain_factor: number;
+    notes: string[];
+  };
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 function fmt(n: number, digits = 1) {
   if (n == null) return "—";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -66,232 +112,252 @@ function fmt(n: number, digits = 1) {
   return n.toFixed(digits);
 }
 
-function MetricCard({
-  label,
-  value,
-  unit,
-  color = "text-green-400",
+// ── Primitive components ───────────────────────────────────────────────────────
+
+function Label({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+      {children}
+    </div>
+  );
+}
+
+function ModeButton({
+  active,
+  onClick,
+  children,
 }: {
-  label: string;
-  value: string | number;
-  unit?: string;
-  color?: string;
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="metric-card transition-all">
-      <div className="text-xs text-gray-400 uppercase tracking-wider mb-1">{label}</div>
-      <div className={`text-2xl font-mono font-bold ${color}`}>
+    <button
+      onClick={onClick}
+      className="py-2 rounded-lg text-sm font-medium transition-all"
+      style={
+        active
+          ? { background: "var(--accent)", color: "#fff" }
+          : {
+              background: "var(--surface-2)",
+              color: "var(--text-muted)",
+              border: "1px solid var(--border)",
+            }
+      }
+      onMouseEnter={(e) => {
+        if (!active) (e.currentTarget as HTMLElement).style.color = "var(--text)";
+      }}
+      onMouseLeave={(e) => {
+        if (!active) (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function KPI({
+  label,
+  value,
+  sub,
+  highlight,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div
+      className="rounded-xl p-4"
+      style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+    >
+      <div className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>
+        {label}
+      </div>
+      <div
+        className="text-xl font-semibold"
+        style={{ color: highlight ? "var(--green)" : "var(--text)" }}
+      >
         {value}
-        {unit && <span className="text-sm text-gray-400 ml-1">{unit}</span>}
+      </div>
+      <div className="text-xs mt-0.5" style={{ color: "var(--text-subtle)" }}>
+        {sub}
       </div>
     </div>
   );
 }
 
-function PerformanceBadge({ rating }: { rating?: string }) {
-  if (!rating) return null;
-  const styles: Record<string, string> = {
-    excellent: "bg-green-900/60 border-green-600 text-green-300",
-    marginal:  "bg-yellow-900/60 border-yellow-600 text-yellow-300",
-    poor:      "bg-red-900/60 border-red-600 text-red-300",
-  };
-  const icons: Record<string, string> = {
-    excellent: "✓",
-    marginal:  "⚠",
-    poor:      "✗",
-  };
-  const cls = styles[rating] ?? "bg-gray-800 border-gray-600 text-gray-300";
+function StatusBadge({ feasible, eff }: { feasible: boolean; eff: number }) {
+  if (!feasible || eff < 0.1)
+    return (
+      <span className="px-2.5 py-1 rounded-md text-xs font-semibold border"
+        style={{ background: "rgba(127,29,29,0.4)", color: "#f87171", borderColor: "#7f1d1d" }}>
+        Infeasible
+      </span>
+    );
+  if (eff < 3)
+    return (
+      <span className="px-2.5 py-1 rounded-md text-xs font-semibold border"
+        style={{ background: "rgba(120,53,15,0.4)", color: "#fbbf24", borderColor: "#78350f" }}>
+        Marginal
+      </span>
+    );
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-bold uppercase tracking-wide ${cls}`}>
-      <span>{icons[rating] ?? "?"}</span>
-      {rating}
+    <span className="px-2.5 py-1 rounded-md text-xs font-semibold border"
+      style={{ background: "rgba(20,83,45,0.4)", color: "#4ade80", borderColor: "#14532d" }}>
+      Viable
     </span>
   );
 }
 
-function LossRow({ label, db, fraction }: { label: string; db?: number | null; fraction?: number | null }) {
-  if (db == null && fraction == null) return null;
-  const pct = fraction != null ? (fraction * 100).toFixed(2) + "%" : null;
-  const dbStr = db != null ? (db >= 0 ? `+${db.toFixed(2)} dB` : `${db.toFixed(2)} dB`) : null;
-  const isGain = db != null && db < 0;
+function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
-    <div className="flex justify-between items-center py-0.5 border-b border-gray-800/50">
-      <span className="text-gray-400 text-xs">{label}</span>
-      <div className="flex gap-3 items-center">
-        {pct && <span className="text-gray-500 text-xs font-mono">{pct}</span>}
-        {dbStr && (
-          <span className={`text-xs font-mono font-medium ${isGain ? "text-green-400" : "text-orange-400"}`}>
-            {dbStr}
-          </span>
-        )}
+    <div>
+      <div className="text-xs uppercase tracking-wider" style={{ color: "var(--text-subtle)" }}>
+        {label}
+      </div>
+      <div className="text-xl font-semibold mt-0.5" style={{ color: "var(--text)" }}>
+        {value}
+      </div>
+      <div className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+        {sub}
       </div>
     </div>
   );
 }
 
-function MicrowaveLinkBudget({ lb }: { lb: LossBudget }) {
+function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="space-y-0.5">
-      <LossRow label="Wall-plug → RF" db={lb.wall_plug_loss_db as number} />
-      <LossRow label="Feed network loss" db={lb.feed_network_loss_db as number} />
-      <LossRow label="Temp derating (45°C)" db={lb.temperature_derating_db as number} />
-      <LossRow label="Phase error (Ruze)" db={lb.phase_error_loss_db as number} />
-      <LossRow label="Pointing error (0.05°)" db={lb.pointing_error_loss_db as number} />
-      <LossRow label="Free-space path loss" db={lb.free_space_path_loss_db as number} />
-      <LossRow label="Gaseous absorption" db={lb.gaseous_absorption_db as number} />
-      <LossRow label="Rain attenuation" db={lb.rain_attenuation_db as number} />
-      <LossRow label="Atmospheric scintillation" db={lb.atmospheric_scintillation_db as number} />
-      <LossRow label="Array gain" db={-(lb.array_gain_ideal_dbi as number)} />
-      <LossRow label="RX aperture gain" db={-(lb.rx_aperture_gain_dbi as number)} />
-      <LossRow label="Rectenna conversion" db={lb.rectenna_conversion_loss_db as number} />
-      <LossRow label="Impedance mismatch" db={lb.impedance_mismatch_db as number} />
-      <LossRow label="DC-DC conditioning" db={lb.dc_dc_conditioning_db as number} />
-      {lb.total_loss_db != null && (
-        <div className="flex justify-between items-center pt-1.5 mt-1 border-t border-gray-600">
-          <span className="text-gray-200 text-xs font-semibold">Net system loss</span>
-          <span className="text-orange-400 text-xs font-mono font-bold">+{(lb.total_loss_db as number).toFixed(2)} dB</span>
-        </div>
-      )}
+    <div className="flex justify-between text-sm">
+      <span style={{ color: "var(--text-muted)" }}>{label}</span>
+      <span className="font-mono text-sm" style={{ color: "var(--text)" }}>
+        {value}
+      </span>
     </div>
   );
 }
 
-function LaserLinkBudget({ lb }: { lb: LossBudget }) {
-  return (
-    <div className="space-y-0.5">
-      <LossRow label="Wall-plug → photon" db={lb.wall_plug_loss_db as number} />
-      <LossRow label="Atmospheric absorption" db={lb.atmospheric_absorption_db as number} />
-      <LossRow label={`Turbulence Strehl (Cn²=${lb.Cn2_m_neg23 != null ? Number(lb.Cn2_m_neg23).toExponential(0) : "?"})`} db={lb.turbulence_strehl_db as number} />
-      <LossRow label="Pointing jitter (5 µrad)" db={lb.pointing_jitter_db as number} />
-      <LossRow label="Geometric capture" db={lb.geometric_collection_db as number} />
-      <LossRow label="Central obscuration (20%)" db={lb.central_obscuration_db as number} />
-      <LossRow label="PV base efficiency" db={lb.pv_base_efficiency_db as number} />
-      <LossRow label="PV temp derating (60°C)" db={lb.pv_temp_derating_db as number} />
-      <LossRow label="DC-DC conditioning" db={lb.dc_dc_conditioning_db as number} />
-      {lb.total_loss_db != null && (
-        <div className="flex justify-between items-center pt-1.5 mt-1 border-t border-gray-600">
-          <span className="text-gray-200 text-xs font-semibold">Net system loss</span>
-          <span className="text-orange-400 text-xs font-mono font-bold">+{(lb.total_loss_db as number).toFixed(2)} dB</span>
-        </div>
-      )}
-    </div>
-  );
-}
+// ── Result sub-components ─────────────────────────────────────────────────────
 
-function FeasibilityBanner({ f, mode }: { f: FeasibilityInfo; mode: string }) {
-  const regime = f.regime;
-  const isFog = f.note.includes("FOG HARD BLOCK");
+function PlainEnglishSummary({ result }: { result: SimResult }) {
+  const eff = result.system_efficiency_pct;
+  const dc = result.dc_power_delivered_kw;
+  const convoys = result.convoys_eliminated_yr;
+  const fuelDay = result.fuel_saved_l_day;
+  const feasible = result.feasibility_ok !== false;
 
-  let color: string;
-  let badge: string;
-  let badgeClass: string;
-
-  if (!f.is_feasible || isFog) {
-    color = "bg-red-900/20 border-red-700/50 text-red-300";
-    badgeClass = "bg-red-800 text-red-200";
-    badge = isFog ? "🚫 FOG BLOCK" : "✗ INFEASIBLE";
-  } else if (f.regime === "far-field" && mode === "microwave") {
-    color = "bg-yellow-900/20 border-yellow-700/50 text-yellow-300";
-    badgeClass = "bg-yellow-800 text-yellow-200";
-    badge = "⚠ FAR-FIELD";
+  let text = "";
+  if (!feasible || dc < 0.1) {
+    text = `At ${result.range_km.toFixed(1)} km in ${result.condition} conditions, ${result.mode} WPT cannot deliver useful power with this hardware configuration. ${result.feasibility?.best_mode_reason || ""}`;
+  } else if (eff < 5) {
+    text = `This scenario is physically possible but marginal — only ${eff.toFixed(1)}% of input power reaches the receiver. For tactical FOB use, consider adjusting range or switching to ${result.feasibility?.best_mode_for_range ?? "the other mode"}.`;
   } else {
-    color = "bg-green-900/20 border-green-700/50 text-green-300";
-    badgeClass = "bg-green-800 text-green-200";
-    badge = "✓ FEASIBLE";
+    const convoyLine =
+      convoys >= 1
+        ? `This would eliminate approximately ${Math.round(convoys)} fuel resupply mission${Math.round(convoys) !== 1 ? "s" : ""} per year — each one a potential IED exposure event for the convoy crew.`
+        : `This partially offsets generator fuel demand, saving ${fuelDay.toFixed(0)} L/day.`;
+    text = `At ${eff.toFixed(0)}% end-to-end efficiency, this system delivers ${dc.toFixed(1)} kW to the FOB — ${result.wpt_coverage_pct != null ? `covering ${result.wpt_coverage_pct.toFixed(0)}% of base power needs. ` : ""}${convoyLine}`;
   }
 
   return (
-    <div className={`rounded-lg border px-4 py-3 text-xs space-y-2 ${color}`}>
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${badgeClass}`}>{badge}</span>
-        <span className="font-mono text-gray-300 uppercase tracking-wide">{regime.replace(/_/g, "-")}</span>
-        {f.rayleigh_distance_m != null && (
-          <span className="text-gray-400">Rayleigh: <span className="font-mono text-white">{f.rayleigh_distance_m.toFixed(0)} m</span></span>
-        )}
-      </div>
-      <p className="leading-relaxed">{f.note}</p>
-      {f.beam_radius_at_range_m != null && f.required_rx_aperture_m2 != null && (
-        <div className="flex gap-6 pt-1 border-t border-current/20 text-gray-400">
-          <span>Beam radius: <span className="text-white font-mono">{f.beam_radius_at_range_m.toFixed(1)} m</span></span>
-          <span>50%-capture aperture: <span className="text-white font-mono">{f.required_rx_aperture_m2.toFixed(0)} m²</span></span>
-        </div>
-      )}
-      <p className="text-gray-500 italic text-[10px]">Ref: {f.darpa_prad_anchor}</p>
+    <div
+      className="rounded-xl px-4 py-3 text-sm leading-relaxed"
+      style={{
+        background: "var(--accent-dim)",
+        border: "1px solid rgba(99,102,241,0.2)",
+        color: "var(--text-muted)",
+      }}
+    >
+      {text}
     </div>
   );
 }
 
-function BestModePanel({ f }: { f: FeasibilityInfo }) {
-  const isLaser = f.best_mode_for_range === "laser";
+function BestModeNote({ f }: { f: FeasibilityInfo }) {
   return (
-    <div className="bg-gray-900/50 border border-gray-800 rounded-lg px-4 py-3 text-xs">
-      <div className="text-gray-400 uppercase tracking-wider mb-1.5">Best Mode for This Scenario</div>
-      <div className="flex items-center gap-2">
-        <span className={`px-2 py-0.5 rounded font-bold uppercase text-xs ${isLaser ? "bg-blue-800 text-blue-200" : "bg-purple-800 text-purple-200"}`}>
-          {f.best_mode_for_range === "laser" ? "⚡ LASER" : "📡 MICROWAVE"}
-        </span>
-        <span className="text-gray-300 leading-relaxed">{f.best_mode_reason}</span>
-      </div>
-    </div>
-  );
-}
-
-function PhysicsDetailPanel({ result }: { result: SimResult }) {
-  const [open, setOpen] = useState(false);
-  const lb = result.loss_budget;
-  if (!lb) return null;
-
-  return (
-    <div className="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex justify-between items-center px-4 py-3 text-xs text-gray-400 hover:bg-gray-800/50 transition-colors"
+    <div
+      className="flex items-start gap-3 rounded-xl px-4 py-3"
+      style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+    >
+      <div
+        className="text-xs uppercase tracking-wider mt-0.5 shrink-0"
+        style={{ color: "var(--text-subtle)" }}
       >
-        <span className="font-mono uppercase tracking-wider">⚙ Physics Detail / Link Budget</span>
-        <span className="text-gray-600">{open ? "▲ collapse" : "▼ expand"}</span>
-      </button>
-      {open && (
-        <div className="px-4 pb-4">
-          {result.mode === "laser" ? (
-            <LaserLinkBudget lb={lb} />
-          ) : (
-            <MicrowaveLinkBudget lb={lb} />
-          )}
-          {lb.fried_r0_m != null && (
-            <div className="mt-2 text-xs text-gray-500 space-y-0.5">
-              <div>Fried r₀: {((lb.fried_r0_m as number) * 100).toFixed(2)} cm</div>
-              <div>Rytov variance: {(lb.rytov_variance as number)?.toExponential(3)}</div>
-              <div>M² beam quality: {lb.m2_beam_quality as number}</div>
-            </div>
-          )}
-          {result.feasibility?.rayleigh_distance_m != null && (
-            <div className="mt-2 pt-2 border-t border-gray-800 text-xs text-gray-500 space-y-0.5">
-              <div className="text-gray-400 font-semibold mb-1">Near/Far-Field Boundary</div>
-              <div>Rayleigh distance: <span className="text-gray-200 font-mono">{result.feasibility.rayleigh_distance_m.toFixed(1)} m</span></div>
-              <div>Range is <span className="text-gray-200 font-mono">{((result.range_km * 1000) / (result.feasibility.rayleigh_distance_m || 1)).toFixed(0)}×</span> beyond Rayleigh — deep far-field</div>
-              {result.feasibility.beam_radius_at_range_m != null && (
-                <div>Beam radius @ {result.range_km.toFixed(1)} km: <span className="text-orange-400 font-mono">{result.feasibility.beam_radius_at_range_m.toFixed(1)} m</span></div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+        Recommendation
+      </div>
+      <div className="text-sm" style={{ color: "var(--text-muted)" }}>
+        <span className="font-medium capitalize" style={{ color: "var(--text)" }}>
+          {f.best_mode_for_range}
+        </span>{" "}
+        is better suited for this scenario. {f.best_mode_reason}
+      </div>
+    </div>
+  );
+}
+
+function PowerChart({ result }: { result: SimResult }) {
+  const data = [
+    { name: "Input", value: result.electrical_input_kw },
+    { name: "Delivered", value: result.dc_power_delivered_kw },
+  ];
+  return (
+    <div
+      className="rounded-xl p-5"
+      style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+    >
+      <div
+        className="text-xs font-medium uppercase tracking-wider mb-4"
+        style={{ color: "var(--text-muted)" }}
+      >
+        Power Balance (kW)
+      </div>
+      <ResponsiveContainer width="100%" height={120}>
+        <BarChart data={data} margin={{ top: 0, right: 0, left: -10, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#252530" />
+          <XAxis dataKey="name" tick={{ fill: "#8888a0", fontSize: 11 }} />
+          <YAxis tick={{ fill: "#8888a0", fontSize: 11 }} />
+          <Tooltip
+            contentStyle={{
+              background: "#18181f",
+              border: "1px solid #252530",
+              borderRadius: 8,
+              fontSize: 12,
+              color: "#f0f0f5",
+            }}
+          />
+          <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+            <Cell fill="#3b82f6" />
+            <Cell fill="#22c55e" />
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   );
 }
 
 function HardwarePanel({ hw }: { hw: RequiredHardware }) {
-  const entries = Object.entries(hw).filter(([k]) => k !== "type");
+  const entries = Object.entries(hw).filter(
+    ([k]) => !["type", "condition_mapped"].includes(k)
+  );
   return (
-    <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-4">
-      <div className="text-xs text-gray-400 uppercase tracking-wider mb-3">
+    <div
+      className="rounded-xl p-5"
+      style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+    >
+      <div
+        className="text-xs font-medium uppercase tracking-wider mb-4"
+        style={{ color: "var(--text-muted)" }}
+      >
         Required Hardware — {hw.type as string}
       </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-2">
         {entries.map(([k, v]) => (
-          <div key={k} className="flex justify-between col-span-1 text-xs py-0.5">
-            <span className="text-gray-500">{k.replace(/_/g, " ")}</span>
-            <span className="text-gray-200 font-mono ml-2">{String(v)}</span>
+          <div key={k} className="flex justify-between text-sm">
+            <span style={{ color: "var(--text-muted)" }}>{k.replace(/_/g, " ")}</span>
+            <span className="font-mono" style={{ color: "var(--text)" }}>
+              {String(v)}
+            </span>
           </div>
         ))}
       </div>
@@ -299,245 +365,618 @@ function HardwarePanel({ hw }: { hw: RequiredHardware }) {
   );
 }
 
-function ResultPanel({ result }: { result: SimResult }) {
-  const chartData = [
-    { name: "DC Delivered", value: result.dc_power_delivered_kw, fill: "#4ade80" },
-    { name: "Elec Input", value: result.electrical_input_kw, fill: "#60a5fa" },
-  ];
+function LossRow({
+  label,
+  db,
+}: {
+  label: string;
+  db?: number | null;
+}) {
+  if (db == null) return null;
+  const isGain = db < 0;
+  const str = db >= 0 ? `+${db.toFixed(2)} dB` : `${db.toFixed(2)} dB`;
+  return (
+    <div className="flex justify-between items-center py-0.5" style={{ borderBottom: "1px solid rgba(37,37,48,0.5)" }}>
+      <span className="text-xs" style={{ color: "var(--text-muted)" }}>{label}</span>
+      <span className="text-xs font-mono" style={{ color: isGain ? "var(--green)" : "#fb923c" }}>{str}</span>
+    </div>
+  );
+}
 
-  const infeasible = result.feasibility_ok === false;
+function LinkBudgetCollapsible({ result }: { result: SimResult }) {
+  const [open, setOpen] = useState(false);
+  const lb = result.loss_budget;
+  if (!lb) return null;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="text-xs text-gray-400 font-mono uppercase tracking-widest">
-          ── {result.mode.toUpperCase()} @ {result.range_km.toFixed(1)} km | {result.condition} ──
+    <div
+      className="rounded-xl overflow-hidden"
+      style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+    >
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex justify-between items-center px-5 py-3 text-xs transition-colors"
+        style={{ color: "var(--text-muted)" }}
+      >
+        <span className="uppercase tracking-wider font-medium">Link Budget / Physics Detail</span>
+        <span style={{ color: "var(--text-subtle)" }}>{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="px-5 pb-5 space-y-0.5">
+          {result.mode === "laser" ? (
+            <>
+              <LossRow label="Wall-plug → photon" db={lb.wall_plug_loss_db as number} />
+              <LossRow label="Atmospheric absorption" db={lb.atmospheric_absorption_db as number} />
+              <LossRow label="Turbulence Strehl" db={lb.turbulence_strehl_db as number} />
+              <LossRow label="Pointing jitter (5 µrad)" db={lb.pointing_jitter_db as number} />
+              <LossRow label="Geometric capture" db={lb.geometric_collection_db as number} />
+              <LossRow label="Central obscuration" db={lb.central_obscuration_db as number} />
+              <LossRow label="PV base efficiency" db={lb.pv_base_efficiency_db as number} />
+              <LossRow label="PV temp derating" db={lb.pv_temp_derating_db as number} />
+              <LossRow label="DC-DC conditioning" db={lb.dc_dc_conditioning_db as number} />
+            </>
+          ) : (
+            <>
+              <LossRow label="Wall-plug → RF" db={lb.wall_plug_loss_db as number} />
+              <LossRow label="Feed network loss" db={lb.feed_network_loss_db as number} />
+              <LossRow label="Temperature derating" db={lb.temperature_derating_db as number} />
+              <LossRow label="Phase error (Ruze)" db={lb.phase_error_loss_db as number} />
+              <LossRow label="Pointing error" db={lb.pointing_error_loss_db as number} />
+              <LossRow label="Free-space path loss" db={lb.free_space_path_loss_db as number} />
+              <LossRow label="Gaseous absorption" db={lb.gaseous_absorption_db as number} />
+              <LossRow label="Rain attenuation" db={lb.rain_attenuation_db as number} />
+              <LossRow label="Atmospheric scintillation" db={lb.atmospheric_scintillation_db as number} />
+              <LossRow label="Array gain" db={lb.array_gain_ideal_dbi != null ? -(lb.array_gain_ideal_dbi as number) : null} />
+              <LossRow label="RX aperture gain" db={lb.rx_aperture_gain_dbi != null ? -(lb.rx_aperture_gain_dbi as number) : null} />
+              <LossRow label="Rectenna conversion" db={lb.rectenna_conversion_loss_db as number} />
+              <LossRow label="Impedance mismatch" db={lb.impedance_mismatch_db as number} />
+              <LossRow label="DC-DC conditioning" db={lb.dc_dc_conditioning_db as number} />
+            </>
+          )}
+          {lb.total_loss_db != null && (
+            <div className="flex justify-between items-center pt-2 mt-1" style={{ borderTop: "1px solid var(--border-bright)" }}>
+              <span className="text-xs font-semibold" style={{ color: "var(--text)" }}>Net system loss</span>
+              <span className="text-xs font-mono font-bold" style={{ color: "#fb923c" }}>
+                +{(lb.total_loss_db as number).toFixed(2)} dB
+              </span>
+            </div>
+          )}
+          {lb.fried_r0_m != null && (
+            <div className="mt-3 pt-3 text-xs space-y-1" style={{ borderTop: "1px solid var(--border)", color: "var(--text-subtle)" }}>
+              <div>Fried r₀: {((lb.fried_r0_m as number) * 100).toFixed(2)} cm</div>
+              <div>Rytov variance: {(lb.rytov_variance as number)?.toExponential(3)}</div>
+              <div>M² beam quality: {lb.m2_beam_quality as number}</div>
+            </div>
+          )}
+          {result.feasibility?.rayleigh_distance_m != null && (
+            <div className="mt-3 pt-3 text-xs space-y-1" style={{ borderTop: "1px solid var(--border)", color: "var(--text-subtle)" }}>
+              <div style={{ color: "var(--text-muted)" }} className="font-medium mb-1">Near/Far-Field Boundary</div>
+              <div>Rayleigh distance: <span className="font-mono" style={{ color: "var(--text)" }}>{result.feasibility.rayleigh_distance_m.toFixed(1)} m</span></div>
+              <div>Range is <span className="font-mono" style={{ color: "var(--text)" }}>{((result.range_km * 1000) / (result.feasibility.rayleigh_distance_m || 1)).toFixed(0)}×</span> beyond Rayleigh — deep far-field</div>
+              {result.feasibility.beam_radius_at_range_m != null && (
+                <div>Beam radius @ {result.range_km.toFixed(1)} km: <span className="font-mono" style={{ color: "#fb923c" }}>{result.feasibility.beam_radius_at_range_m.toFixed(1)} m</span></div>
+              )}
+            </div>
+          )}
         </div>
-        <PerformanceBadge rating={result.performance_rating} />
+      )}
+    </div>
+  );
+}
+
+function ResultPanel({ result }: { result: SimResult }) {
+  const feasible = result.feasibility_ok !== false;
+  const eff = result.system_efficiency_pct;
+
+  return (
+    <div className="space-y-5">
+      {/* Status bar */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <StatusBadge feasible={feasible} eff={eff} />
+        <span className="text-sm" style={{ color: "var(--text-subtle)" }}>
+          {result.mode} · {result.range_km.toFixed(1)} km · {result.condition}
+        </span>
         {result.link_margin_db != null && (
-          <span className={`text-xs font-mono ${result.link_margin_db >= 0 ? "text-green-400" : "text-red-400"}`}>
-            {result.link_margin_db >= 0 ? "+" : ""}{result.link_margin_db.toFixed(1)} dB margin
+          <span
+            className="text-xs font-mono ml-auto"
+            style={{ color: result.link_margin_db >= 0 ? "var(--green)" : "var(--red)" }}
+          >
+            {result.link_margin_db >= 0 ? "+" : ""}
+            {result.link_margin_db.toFixed(1)} dB link margin
           </span>
         )}
       </div>
 
-      {/* Feasibility banner (v3) */}
-      {result.feasibility && (
-        <FeasibilityBanner f={result.feasibility} mode={result.mode} />
-      )}
-
-      {/* Legacy feasibility warning (fallback when feasibility object absent) */}
-      {!result.feasibility && infeasible && result.feasibility_warning && (
-        <div className="bg-red-900/20 border border-red-700/50 rounded-lg px-4 py-3 text-red-300 text-xs">
-          <span className="font-bold">⚠ Feasibility Warning: </span>
-          {result.feasibility_warning}
+      {/* Feasibility note */}
+      {result.feasibility?.note && (
+        <div
+          className="text-xs px-4 py-3 rounded-lg"
+          style={
+            feasible
+              ? {
+                  border: "1px solid var(--border)",
+                  color: "var(--text-muted)",
+                  background: "var(--surface)",
+                }
+              : {
+                  border: "1px solid rgba(127,29,29,0.6)",
+                  color: "#fca5a5",
+                  background: "rgba(127,29,29,0.15)",
+                }
+          }
+        >
+          {result.feasibility.note}
         </div>
       )}
 
-      {/* Key metrics */}
-      <div className="grid grid-cols-2 gap-3">
-        <MetricCard
-          label="DC Delivered"
-          value={result.dc_power_delivered_kw.toFixed(2)}
-          unit="kW"
-          color={infeasible ? "text-red-400" : "text-green-400"}
+      {/* Key numbers — convoys FIRST (primary DoD value prop) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <KPI
+          label="Convoys eliminated"
+          value={`${result.convoys_eliminated_yr.toFixed(0)}/yr`}
+          sub="↓ IED exposure per mission"
+          highlight={feasible && result.convoys_eliminated_yr >= 1}
         />
-        <MetricCard
-          label="System Efficiency"
-          value={result.system_efficiency_pct.toFixed(2)}
-          unit="%"
-          color="text-blue-400"
+        <KPI
+          label="Fuel resupply saved"
+          value={`${result.fuel_saved_l_day.toFixed(0)} L/day`}
+          sub="generator diesel offset"
         />
-        <MetricCard
-          label="Fuel Saved"
-          value={result.fuel_saved_l_day.toFixed(1)}
-          unit="L/day"
-          color="text-yellow-400"
+        <KPI
+          label="FOB coverage"
+          value={`${result.wpt_coverage_pct.toFixed(0)}%`}
+          sub="of base power needs"
         />
-        <MetricCard
-          label="FOB Coverage"
-          value={result.wpt_coverage_pct.toFixed(0)}
-          unit="%"
-          color="text-purple-400"
+        <KPI
+          label="Power delivered"
+          value={`${result.dc_power_delivered_kw.toFixed(2)} kW`}
+          sub="DC at the receiver"
+          highlight={feasible && result.dc_power_delivered_kw >= 0.1}
         />
-        <MetricCard
-          label="Convoys Eliminated"
-          value={result.convoys_eliminated_yr.toFixed(0)}
-          unit="/yr"
-          color="text-red-400"
+        <KPI
+          label="System efficiency"
+          value={`${result.system_efficiency_pct.toFixed(1)}%`}
+          sub="wall plug → DC"
         />
-        <MetricCard
-          label="Total Value"
+        <KPI
+          label="Annual value"
           value={`$${fmt(result.total_value_yr_usd)}`}
-          unit="/yr"
-          color="text-orange-400"
+          sub="fuel + convoy savings"
         />
       </div>
 
-      {/* Mini power chart */}
-      <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-        <div className="text-xs text-gray-400 mb-3 uppercase tracking-wider">Power Balance (kW)</div>
-        <ResponsiveContainer width="100%" height={120}>
-          <BarChart data={chartData} margin={{ top: 0, right: 0, left: -10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 10 }} />
-            <YAxis tick={{ fill: "#9ca3af", fontSize: 10 }} />
-            <Tooltip
-              contentStyle={{ backgroundColor: "#111827", border: "1px solid #374151", borderRadius: 6 }}
-              labelStyle={{ color: "#9ca3af" }}
-            />
-            <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-              {chartData.map((entry, i) => (
-                <Cell key={i} fill={entry.fill} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+      {/* Plain-English interpretation */}
+      <PlainEnglishSummary result={result} />
+
+      {/* Power chart */}
+      <PowerChart result={result} />
+
+      {/* Hardware needed */}
+      {result.required_hardware && <HardwarePanel hw={result.required_hardware} />}
+
+      {/* Link budget (collapsed by default) */}
+      <LinkBudgetCollapsible result={result} />
+
+      {/* Best mode */}
+      {result.feasibility && <BestModeNote f={result.feasibility} />}
+    </div>
+  );
+}
+
+function CompareChart({ laser, microwave }: { laser: SimResult; microwave: SimResult }) {
+  const data = [
+    {
+      name: "Efficiency %",
+      Laser: parseFloat(laser.system_efficiency_pct.toFixed(2)),
+      Microwave: parseFloat(microwave.system_efficiency_pct.toFixed(2)),
+    },
+    {
+      name: "DC kW",
+      Laser: parseFloat(laser.dc_power_delivered_kw.toFixed(2)),
+      Microwave: parseFloat(microwave.dc_power_delivered_kw.toFixed(2)),
+    },
+    {
+      name: "Fuel L/day",
+      Laser: parseFloat(laser.fuel_saved_l_day.toFixed(1)),
+      Microwave: parseFloat(microwave.fuel_saved_l_day.toFixed(1)),
+    },
+  ];
+  return (
+    <div
+      className="rounded-xl p-5"
+      style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+    >
+      <div
+        className="text-xs font-medium uppercase tracking-wider mb-4"
+        style={{ color: "var(--text-muted)" }}
+      >
+        Side-by-Side Metrics
       </div>
-
-      {/* Required Hardware */}
-      {result.required_hardware && (
-        <HardwarePanel hw={result.required_hardware} />
-      )}
-
-      {/* Physics Detail (expandable) */}
-      {result.loss_budget && <PhysicsDetailPanel result={result} />}
-
-      {/* Best mode recommendation */}
-      {result.feasibility && <BestModePanel f={result.feasibility} />}
-
-      {/* Savings breakdown */}
-      <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-4 text-sm space-y-2">
-        <div className="text-xs text-gray-400 uppercase tracking-wider mb-2">Annual Savings Breakdown</div>
-        <div className="flex justify-between">
-          <span className="text-gray-400">Fuel cost saved</span>
-          <span className="text-green-400 font-mono">${result.fuel_cost_saved_yr_usd.toLocaleString(undefined, {maximumFractionDigits: 0})}/yr</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-gray-400">Convoy cost saved</span>
-          <span className="text-green-400 font-mono">${result.convoy_cost_saved_yr_usd.toLocaleString(undefined, {maximumFractionDigits: 0})}/yr</span>
-        </div>
-        <div className="flex justify-between border-t border-gray-700 pt-2">
-          <span className="text-gray-200 font-medium">Total value</span>
-          <span className="text-orange-400 font-mono font-bold">${result.total_value_yr_usd.toLocaleString(undefined, {maximumFractionDigits: 0})}/yr</span>
-        </div>
-      </div>
+      <ResponsiveContainer width="100%" height={160}>
+        <BarChart data={data} margin={{ top: 0, right: 0, left: -10, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#252530" />
+          <XAxis dataKey="name" tick={{ fill: "#8888a0", fontSize: 10 }} />
+          <YAxis tick={{ fill: "#8888a0", fontSize: 10 }} />
+          <Tooltip
+            contentStyle={{
+              background: "#18181f",
+              border: "1px solid #252530",
+              borderRadius: 8,
+              fontSize: 12,
+              color: "#f0f0f5",
+            }}
+          />
+          <Legend wrapperStyle={{ fontSize: 11, color: "#8888a0" }} />
+          <Bar dataKey="Laser" fill="#3b82f6" radius={[2, 2, 0, 0]} />
+          <Bar dataKey="Microwave" fill="#a78bfa" radius={[2, 2, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   );
 }
 
 function ComparePanel({ result }: { result: CompareResult }) {
-  const compData = [
-    { name: "Efficiency %", laser: result.laser.system_efficiency_pct, microwave: result.microwave.system_efficiency_pct },
-    { name: "DC Delivered kW", laser: result.laser.dc_power_delivered_kw, microwave: result.microwave.dc_power_delivered_kw },
-    { name: "Fuel L/day", laser: result.laser.fuel_saved_l_day, microwave: result.microwave.fuel_saved_l_day },
-  ];
+  const laserBetter =
+    result.laser.system_efficiency_pct >= result.microwave.system_efficiency_pct;
 
   return (
-    <div className="space-y-4">
-      <div className="text-xs text-gray-400 font-mono uppercase tracking-widest">── LASER vs MICROWAVE COMPARISON ──</div>
+    <div className="space-y-5">
+      <div className="text-sm" style={{ color: "var(--text-muted)" }}>
+        Laser vs Microwave at the same scenario
+      </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      {/* Side-by-side summary cards */}
+      <div className="grid grid-cols-2 gap-4">
         {(["laser", "microwave"] as const).map((m) => {
           const r = result[m];
-          const infeasible = r.feasibility_ok === false;
+          const winner = m === "laser" ? laserBetter : !laserBetter;
           return (
-            <div key={m} className="bg-gray-900 border border-gray-700 rounded-lg p-3">
-              <div className={`flex items-center gap-2 mb-2`}>
-                <span className={`text-xs font-mono ${m === "laser" ? "text-blue-400" : "text-purple-400"}`}>
-                  {m.toUpperCase()}
+            <div
+              key={m}
+              className="rounded-xl p-5"
+              style={
+                winner
+                  ? {
+                      border: "1px solid var(--accent)",
+                      background: "var(--accent-dim)",
+                    }
+                  : {
+                      border: "1px solid var(--border)",
+                      background: "var(--surface)",
+                    }
+              }
+            >
+              <div className="flex items-center justify-between mb-4">
+                <span className="font-semibold capitalize" style={{ color: "var(--text)" }}>
+                  {m}
                 </span>
-                <PerformanceBadge rating={r.performance_rating} />
-              </div>
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Efficiency</span>
-                  <span className="font-mono">{r.system_efficiency_pct.toFixed(2)}%</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">DC Power</span>
-                  <span className={`font-mono ${infeasible ? "text-red-400" : "text-green-400"}`}>
-                    {r.dc_power_delivered_kw.toFixed(2)} kW
+                {winner && (
+                  <span className="text-xs font-medium" style={{ color: "var(--accent)" }}>
+                    Recommended
                   </span>
-                </div>
-                {r.link_margin_db != null && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Link Margin</span>
-                    <span className={`font-mono ${r.link_margin_db >= 0 ? "text-green-400" : "text-red-400"}`}>
-                      {r.link_margin_db >= 0 ? "+" : ""}{r.link_margin_db.toFixed(1)} dB
-                    </span>
-                  </div>
                 )}
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Value/yr</span>
-                  <span className="font-mono text-green-400">${fmt(r.total_value_yr_usd)}</span>
-                </div>
               </div>
+              <div className="space-y-2 mb-4">
+                <Row label="Efficiency" value={`${r.system_efficiency_pct.toFixed(1)}%`} />
+                <Row label="DC delivered" value={`${r.dc_power_delivered_kw.toFixed(2)} kW`} />
+                <Row label="Fuel saved" value={`${r.fuel_saved_l_day.toFixed(0)} L/day`} />
+                <Row label="Annual value" value={`$${fmt(r.total_value_yr_usd)}`} />
+              </div>
+              <StatusBadge feasible={r.feasibility_ok !== false} eff={r.system_efficiency_pct} />
             </div>
           );
         })}
       </div>
 
-      <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-        <div className="text-xs text-gray-400 mb-3 uppercase tracking-wider">Side-by-Side Metrics</div>
-        <ResponsiveContainer width="100%" height={160}>
-          <BarChart data={compData} margin={{ top: 0, right: 0, left: -10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 9 }} />
-            <YAxis tick={{ fill: "#9ca3af", fontSize: 10 }} />
-            <Tooltip
-              contentStyle={{ backgroundColor: "#111827", border: "1px solid #374151", borderRadius: 6 }}
-            />
-            <Bar dataKey="laser" fill="#60a5fa" name="Laser" radius={[2, 2, 0, 0]} />
-            <Bar dataKey="microwave" fill="#c084fc" name="Microwave" radius={[2, 2, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      {/* Chart */}
+      <CompareChart laser={result.laser} microwave={result.microwave} />
 
-      {/* Hardware comparison */}
-      <div className="grid grid-cols-2 gap-3">
-        {(["laser", "microwave"] as const).map((m) => {
-          const r = result[m];
-          if (!r.required_hardware) return null;
-          return (
-            <div key={m} className="bg-gray-900/50 border border-gray-800 rounded-lg p-3">
-              <div className={`text-xs font-mono mb-2 ${m === "laser" ? "text-blue-400" : "text-purple-400"}`}>
-                {m.toUpperCase()} HW
-              </div>
-              <div className="text-xs space-y-1">
-                {Object.entries(r.required_hardware)
-                  .filter(([k]) => !["type", "condition_mapped"].includes(k))
-                  .slice(0, 5)
-                  .map(([k, v]) => (
-                    <div key={k} className="flex justify-between">
-                      <span className="text-gray-500">{k.replace(/_/g, " ")}</span>
-                      <span className="text-gray-200 font-mono">{String(v)}</span>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          );
-        })}
+      {/* Takeaway */}
+      <div
+        className="rounded-xl px-4 py-4 text-sm"
+        style={{
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          color: "var(--text-muted)",
+        }}
+      >
+        <span className="font-medium" style={{ color: "var(--text)" }}>
+          Takeaway:{" "}
+        </span>
+        {laserBetter
+          ? `Laser delivers ${(
+              result.laser.system_efficiency_pct /
+              Math.max(result.microwave.system_efficiency_pct, 0.01)
+            ).toFixed(0)}x more efficiently at this range in ${result.laser.condition} conditions.`
+          : `Microwave holds up better in ${result.microwave.condition} conditions — laser is more severely attenuated.`}
       </div>
     </div>
   );
 }
 
+function SpaceResultPanel({ result }: { result: SpaceResult }) {
+  const isLeo = result.altitude_km < 2000;
+  const isGeo = result.altitude_km >= 20000;
+  const eff = result.system_efficiency_pct;
+  const dc = result.dc_power_delivered_kw;
+  const hw = result.required_hardware;
+  const lb = result.link_budget;
+  const ctx = result.context;
+  const isLaser = result.mode === "space_laser";
+  const [lbOpen, setLbOpen] = useState(false);
+
+  const infra = isGeo
+    ? "National-grid scale. GEO requires km-scale orbital arrays and km² ground rectennas — the ESA SOLARIS / JAXA SSPS program."
+    : isLeo
+    ? "Feasibility-demonstration scale. LEO laser WPT is proven — NRL PRAM flew on ISS in 2021. 2–10 m apertures are realistic."
+    : "Mid-scale. MEO is a stepping stone between LEO demos and GEO operational deployment.";
+
+  return (
+    <div className="space-y-5">
+      {/* Header banner */}
+      <div
+        className="rounded-xl px-5 py-4"
+        style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-xs uppercase tracking-wider mb-1" style={{ color: "var(--text-subtle)" }}>
+              Future scale · Space-to-Earth WPT
+            </div>
+            <div className="text-lg font-semibold" style={{ color: "var(--text)" }}>
+              {result.orbit_name}
+            </div>
+            <div className="text-sm mt-0.5" style={{ color: "var(--text-muted)" }}>
+              {result.altitude_km.toLocaleString()} km altitude · {isLaser ? "1070 nm laser" : "5.8 GHz microwave"} · {result.condition}
+            </div>
+          </div>
+          <span
+            className="shrink-0 text-xs px-3 py-1 rounded-full font-medium"
+            style={
+              isLeo
+                ? { background: "rgba(20,83,45,0.4)", color: "#4ade80", border: "1px solid #14532d" }
+                : isGeo
+                ? { background: "rgba(120,53,15,0.4)", color: "#fbbf24", border: "1px solid #78350f" }
+                : { background: "var(--surface-2)", color: "var(--text-muted)", border: "1px solid var(--border)" }
+            }
+          >
+            {isLeo ? "Demo-ready" : isGeo ? "Future scale" : "Mid-term"}
+          </span>
+        </div>
+      </div>
+
+      {/* Error / fog block */}
+      {result.error && (
+        <div className="rounded-xl px-4 py-3 text-sm" style={{ background: "rgba(127,29,29,0.15)", border: "1px solid rgba(127,29,29,0.6)", color: "#fca5a5" }}>
+          {result.error}
+        </div>
+      )}
+
+      {/* Infrastructure context */}
+      <div
+        className="rounded-xl px-4 py-3 text-sm leading-relaxed"
+        style={{ background: "var(--accent-dim)", border: "1px solid rgba(99,102,241,0.2)", color: "var(--text-muted)" }}
+      >
+        {infra}
+        {ctx?.note && <span className="block mt-1">{ctx.note}</span>}
+      </div>
+
+      {/* Key metrics */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <KPI
+          label="DC delivered"
+          value={`${dc.toFixed(dc < 1 ? 3 : 1)} kW`}
+          sub="at the ground receiver"
+          highlight={dc > 0.01}
+        />
+        <KPI
+          label="System efficiency"
+          value={`${eff.toFixed(2)}%`}
+          sub="wall-plug → DC"
+        />
+        <KPI
+          label="Beam radius at ground"
+          value={result.beam_radius_at_ground_m != null
+            ? result.beam_radius_at_ground_m >= 1000
+              ? `${(result.beam_radius_at_ground_m / 1000).toFixed(1)} km`
+              : `${result.beam_radius_at_ground_m.toFixed(1)} m`
+            : "—"}
+          sub={isLaser ? "1/e² beam radius" : "3 dB beam radius"}
+        />
+        {hw && (
+          <>
+            {isLaser ? (
+              <>
+                <KPI label="TX aperture" value={`${hw.laser_aperture_m} m`} sub="orbital telescope" />
+                <KPI label="RX aperture" value={`${hw.rx_aperture_m} m`} sub="ground PV telescope" />
+                <KPI label="Capture" value={`${Number(hw.geometric_capture_pct).toFixed(3)}%`} sub="of transmitted beam" />
+              </>
+            ) : (
+              <>
+                <KPI label="TX array" value={`${Number(hw.tx_array_diameter_m) >= 1000 ? (Number(hw.tx_array_diameter_m)/1000).toFixed(1)+"km" : hw.tx_array_diameter_m+"m"}`} sub="orbital array diameter" />
+                <KPI label="Rectenna" value={`${(Number(hw.required_rx_area_m2)/1e6).toFixed(2)} km²`} sub="ground receive area" />
+                <KPI label="TX RF power" value={`${Number(hw.required_rf_power_gw).toFixed(3)} GW`} sub="orbital transmit" />
+              </>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Link budget (collapsible) */}
+      {lb && (
+        <div className="rounded-xl overflow-hidden" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+          <button
+            onClick={() => setLbOpen(!lbOpen)}
+            className="w-full flex justify-between items-center px-5 py-3 text-xs"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <span className="uppercase tracking-wider font-medium">Link Budget</span>
+            <span style={{ color: "var(--text-subtle)" }}>{lbOpen ? "▲" : "▼"}</span>
+          </button>
+          {lbOpen && (
+            <div className="px-5 pb-4 space-y-0.5">
+              {Object.entries(lb).map(([k, v]) => (
+                <LossRow key={k} label={k.replace(/_/g, " ")} db={v as number} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Hardware panel */}
+      {hw && (
+        <div className="rounded-xl p-5" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+          <div className="text-xs font-medium uppercase tracking-wider mb-3" style={{ color: "var(--text-muted)" }}>
+            Infrastructure Required — {hw.type}
+          </div>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+            {Object.entries(hw).filter(([k]) => k !== "type").map(([k, v]) => (
+              <div key={k} className="flex justify-between text-sm">
+                <span style={{ color: "var(--text-muted)" }}>{k.replace(/_/g, " ")}</span>
+                <span className="font-mono" style={{ color: "var(--text)" }}>{String(v)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Real-world references */}
+      {ctx && (
+        <div className="rounded-xl p-4 text-xs space-y-1.5" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+          <div className="uppercase tracking-wider font-medium mb-2" style={{ color: "var(--text-subtle)" }}>Real-world anchors</div>
+          {Object.entries(ctx).filter(([k]) => k.endsWith("_ref")).map(([k, v]) => (
+            <div key={k} style={{ color: "var(--text-muted)" }}>▸ {v}</div>
+          ))}
+          {isGeo && (
+            <div className="mt-2 pt-2" style={{ borderTop: "1px solid var(--border)", color: "var(--text-subtle)" }}>
+              Proving the FOB case first with ground-based WPT de-risks the space program — same RF/laser physics, 
+              same regulatory frameworks, same PV receiver technology. LEO demos scale to GEO deployment.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OptimizedResultPanel({ result }: { result: OptimizedResult }) {
+  const { base, optimized, improvement_summary: imp } = result;
+  const gained = imp.gain_factor;
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="rounded-xl px-5 py-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+        <div className="text-xs uppercase tracking-wider mb-1" style={{ color: "var(--text-subtle)" }}>
+          Optimized scenario — {base.mode} · {base.range_km.toFixed(1)} km · {base.condition}
+        </div>
+        <div className="flex items-baseline gap-3 mt-1">
+          <span className="text-2xl font-bold" style={{ color: "var(--green)" }}>{imp.optimized_eff_pct.toFixed(1)}%</span>
+          <span className="text-sm" style={{ color: "var(--text-muted)" }}>vs {imp.baseline_eff_pct.toFixed(1)}% baseline</span>
+          <span className="ml-auto text-sm font-semibold px-2 py-0.5 rounded" style={{ background: "rgba(20,83,45,0.4)", color: "#4ade80" }}>
+            {gained}× improvement
+          </span>
+        </div>
+      </div>
+
+      {/* Side-by-side */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="rounded-xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+          <div className="text-xs uppercase tracking-wider mb-3" style={{ color: "var(--text-subtle)" }}>Baseline</div>
+          <div className="space-y-2">
+            <Row label="Efficiency" value={`${base.system_efficiency_pct.toFixed(1)}%`} />
+            <Row label="DC delivered" value={`${base.dc_power_delivered_kw.toFixed(2)} kW`} />
+            <Row label="Convoys cut" value={`${base.convoys_eliminated_yr?.toFixed(0) ?? "—"}/yr`} />
+            <Row label="Annual value" value={`$${fmt(base.total_value_yr_usd)}`} />
+          </div>
+        </div>
+        <div className="rounded-xl p-4" style={{ border: "1px solid var(--accent)", background: "var(--accent-dim)" }}>
+          <div className="text-xs uppercase tracking-wider mb-3" style={{ color: "var(--accent)" }}>Optimized</div>
+          <div className="space-y-2">
+            <Row label="Efficiency" value={`${optimized.system_efficiency_pct.toFixed(1)}%`} />
+            <Row label="DC delivered" value={`${optimized.dc_power_delivered_kw.toFixed(2)} kW`} />
+            <Row label="Convoys cut" value={`${optimized.convoys_eliminated_yr?.toFixed(0) ?? "—"}/yr`} />
+            <Row label="Annual value" value={`$${fmt(optimized.total_value_yr_usd)}`} />
+          </div>
+        </div>
+      </div>
+
+      {/* What was applied */}
+      <div className="rounded-xl p-4 space-y-2" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+        <div className="text-xs uppercase tracking-wider mb-1" style={{ color: "var(--text-subtle)" }}>Optimizations applied</div>
+        {imp.notes.map((note, i) => (
+          <div key={i} className="flex items-start gap-2 text-sm">
+            <span style={{ color: "var(--green)" }}>✓</span>
+            <span style={{ color: "var(--text-muted)" }}>{note}</span>
+          </div>
+        ))}
+        {imp.notes.length === 0 && (
+          <div className="text-sm" style={{ color: "var(--text-subtle)" }}>No applicable optimizations for this mode/condition.</div>
+        )}
+      </div>
+
+      {/* Physics note */}
+      <div className="rounded-xl px-4 py-3 text-xs" style={{ background: "var(--accent-dim)", border: "1px solid rgba(99,102,241,0.2)", color: "var(--text-subtle)" }}>
+        Efficiency capped at 35% (above demonstrated state-of-art: DARPA PRAD 20%, JAXA MW 22%). 
+        Optimized figures represent best-case hardware configurations; real deployments will vary.
+      </div>
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function SimulatorPage() {
-  const [mode, setMode] = useState<"laser" | "microwave" | "compare">("laser");
+  // ── Primary mode defaults: laser, 2 km, 15 kW (typical small FOB), clear ──
+  type AppMode = "laser" | "microwave" | "compare" | "space" | "optimized";
+  const [mode, setMode] = useState<AppMode>("laser");
   const [rangeM, setRangeM] = useState(2000);
-  const [powerKw, setPowerKw] = useState(5);
+  const [powerKw, setPowerKw] = useState(15);
   const [condition, setCondition] = useState("clear");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<SimResult | CompareResult | null>(null);
+  const [result, setResult] = useState<SimResult | CompareResult | SpaceResult | OptimizedResult | null>(null);
+
+  // Space mode sub-state
+  const [orbit, setOrbit] = useState("leo");
+  const [spaceMode, setSpaceMode] = useState<"laser" | "microwave">("laser");
+
+  // Optimized mode sub-state
+  const [baseMode, setBaseMode] = useState<"laser" | "microwave">("laser");
+  const [optimizations, setOptimizations] = useState<string[]>(["adaptive_optics", "inp_cells", "large_aperture"]);
+
+  function toggleOpt(key: string) {
+    setOptimizations((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  }
 
   async function runSim() {
     setLoading(true);
     setError(null);
     try {
-      const data = await simulate({ mode, range_m: rangeM, power_kw: powerKw, condition });
-      setResult(data);
+      let data: unknown;
+      if (mode === "space") {
+        data = await simulateSpace({
+          mode: spaceMode,
+          orbit,
+          power_kw: powerKw,
+          condition,
+        });
+      } else if (mode === "optimized") {
+        data = await simulateOptimized({
+          mode: baseMode,
+          range_m: rangeM,
+          power_kw: powerKw,
+          condition,
+          optimizations,
+        });
+      } else if (mode === "compare") {
+        data = await simulate({ mode: "compare", range_m: rangeM, power_kw: powerKw, condition });
+      } else {
+        data = await simulate({ mode, range_m: rangeM, power_kw: powerKw, condition });
+      }
+      setResult(data as SimResult | CompareResult | SpaceResult | OptimizedResult);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -545,164 +984,307 @@ export default function SimulatorPage() {
     }
   }
 
+  // Auto-run the default FOB scenario on first load
+  const didAutoRun = useRef(false);
+  useEffect(() => {
+    if (!didAutoRun.current) {
+      didAutoRun.current = true;
+      runSim();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const modeDesc: Record<AppMode, string> = {
+    laser: "Near-infrared beam (1070 nm). Best efficiency at range in clear conditions.",
+    microwave: "5.8 GHz phased array. All-weather, effective within ~500 m with portable hardware.",
+    compare: "Run both modes side by side at the same scenario parameters.",
+    space: "Future scale — Space-to-Earth WPT from LEO/GEO. Proving the FOB case first de-risks this.",
+    optimized: "Apply best-case hardware upgrades (AO, InP cells, larger apertures) to see ceiling efficiency.",
+  };
+
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
+    <div className="min-h-screen" style={{ background: "var(--bg)" }}>
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white">
-          Aether Sim
-        </h1>
-        <p className="text-gray-400 mt-1 text-lg">
-          Wireless Power Transmission for Defense Logistics
-        </p>
-        <div className="h-px bg-gradient-to-r from-green-500 via-blue-500 to-transparent mt-4" />
-      </div>
+      <header className="px-6 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <div>
+            <span className="font-semibold text-lg tracking-tight" style={{ color: "var(--text)" }}>
+              Aether
+            </span>
+            <span className="text-sm ml-3" style={{ color: "var(--text-muted)" }}>
+              WPT Simulator
+            </span>
+          </div>
+          <span
+            className="text-xs px-3 py-1 rounded-full"
+            style={{ color: "var(--text-subtle)", background: "var(--surface)", border: "1px solid var(--border)" }}
+          >
+            Physics v3 · 2025
+          </span>
+        </div>
+      </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-8">
-        {/* Controls panel */}
-        <div className="space-y-6">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h2 className="text-sm font-mono text-gray-400 uppercase tracking-widest mb-5">
-              ── SIMULATION PARAMETERS ──
-            </h2>
+      <main className="max-w-6xl mx-auto px-6 py-12">
+        {/* Hero — FOB-first framing */}
+        <div className="mb-10 max-w-2xl">
+          <h1 className="text-3xl font-bold leading-snug" style={{ color: "var(--text)" }}>
+            Deliver power to a forward operating base —<br />
+            <span style={{ color: "var(--accent)" }}>no fuel convoys required</span>
+          </h1>
+          <p className="mt-3 text-base leading-relaxed" style={{ color: "var(--text-muted)" }}>
+            Aether models laser and microwave wireless power transmission for defense logistics.
+            Calculate how much power reaches the FOB, what hardware it takes, and how many
+            dangerous resupply missions it eliminates.
+          </p>
+          <div className="flex gap-8 mt-6 flex-wrap">
+            <Stat label="Convoys eliminated/yr" value="48+" sub="per 15 kW laser system" />
+            <Stat label="Fuel saved per day" value="300+ L" sub="diesel offset at 2 km" />
+            <Stat label="Real-world anchor" value="800 W @ 8.6 km" sub="DARPA POWER PRAD 2025" />
+          </div>
+        </div>
 
-            {/* Mode */}
-            <div className="mb-5">
-              <label className="text-xs text-gray-400 uppercase tracking-wider block mb-2">
-                Transmission Mode
-              </label>
-              <div className="grid grid-cols-3 gap-2">
+        <div className="grid lg:grid-cols-[380px_1fr] gap-8">
+          {/* Config Panel */}
+          <div
+            className="rounded-xl p-6 space-y-6 sticky top-6 self-start"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+          >
+            {/* Mode selector — primary modes first, space as secondary */}
+            <div>
+              <Label>Mode</Label>
+              <div className="grid grid-cols-3 gap-2 mt-2">
                 {(["laser", "microwave", "compare"] as const).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setMode(m)}
-                    className={`py-2 px-3 rounded-lg text-sm font-medium transition-all ${
-                      mode === m
-                        ? "bg-green-600 text-white shadow-lg shadow-green-900/50"
-                        : "bg-gray-800 text-gray-300 hover:bg-gray-700"
-                    }`}
-                  >
-                    {m.charAt(0).toUpperCase() + m.slice(1)}
-                  </button>
+                  <ModeButton key={m} active={mode === m} onClick={() => setMode(m)}>
+                    {m === "laser" ? "Laser" : m === "microwave" ? "Microwave" : "Compare"}
+                  </ModeButton>
                 ))}
               </div>
-            </div>
-
-            {/* Range slider */}
-            <div className="mb-5">
-              <label className="text-xs text-gray-400 uppercase tracking-wider block mb-2">
-                Range: <span className="text-white font-mono">{(rangeM / 1000).toFixed(1)} km</span>
-              </label>
-              <input
-                type="range"
-                min={500}
-                max={10000}
-                step={100}
-                value={rangeM}
-                onChange={(e) => setRangeM(Number(e.target.value))}
-                className="w-full accent-green-500"
-              />
-              <div className="flex justify-between text-xs text-gray-600 mt-1">
-                <span>0.5 km</span>
-                <span>10 km</span>
+              {/* Space and Optimized as secondary/advanced options */}
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <ModeButton active={mode === "optimized"} onClick={() => setMode("optimized")}>
+                  Optimized ↑
+                </ModeButton>
+                <ModeButton active={mode === "space"} onClick={() => setMode("space")}>
+                  ✦ Space scale
+                </ModeButton>
               </div>
+              <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
+                {modeDesc[mode]}
+              </p>
             </div>
 
-            {/* Power slider */}
-            <div className="mb-5">
-              <label className="text-xs text-gray-400 uppercase tracking-wider block mb-2">
-                Target Power: <span className="text-white font-mono">{powerKw} kW</span>
-              </label>
+            {/* Space sub-controls */}
+            {mode === "space" && (
+              <div className="space-y-4">
+                <div>
+                  <Label>Orbit</Label>
+                  <select
+                    value={orbit}
+                    onChange={(e) => setOrbit(e.target.value)}
+                    className="mt-2 w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
+                    style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text)" }}
+                  >
+                    <option value="iss_leo">ISS / LEO (408 km)</option>
+                    <option value="leo">Standard LEO (600 km)</option>
+                    <option value="meo">Medium Earth Orbit (10,000 km)</option>
+                    <option value="geo">Geostationary GEO (35,786 km)</option>
+                  </select>
+                </div>
+                <div>
+                  <Label>Space link type</Label>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <ModeButton active={spaceMode === "laser"} onClick={() => setSpaceMode("laser")}>
+                      Laser
+                    </ModeButton>
+                    <ModeButton active={spaceMode === "microwave"} onClick={() => setSpaceMode("microwave")}>
+                      Microwave
+                    </ModeButton>
+                  </div>
+                </div>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  {orbit === "geo"
+                    ? "GEO requires km-scale orbital arrays and km² rectennas — ESA SOLARIS / JAXA SSPS scale. Long-term national-grid opportunity."
+                    : "LEO laser WPT is proven — NRL PRAM flew on ISS in 2021. 2–10 m apertures are realistic for near-term demos."}
+                </p>
+              </div>
+            )}
+
+            {/* Optimized sub-controls */}
+            {mode === "optimized" && (
+              <div className="space-y-4">
+                <div>
+                  <Label>Base mode</Label>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <ModeButton active={baseMode === "laser"} onClick={() => setBaseMode("laser")}>
+                      Laser
+                    </ModeButton>
+                    <ModeButton active={baseMode === "microwave"} onClick={() => setBaseMode("microwave")}>
+                      Microwave
+                    </ModeButton>
+                  </div>
+                </div>
+                <div>
+                  <Label>Optimizations</Label>
+                  <div className="space-y-2.5 mt-2">
+                    {[
+                      { key: "adaptive_optics", label: "Adaptive optics", desc: "Laser turbulence pre-compensation (2.5× Strehl)" },
+                      { key: "inp_cells", label: "InP PV cells (55%)", desc: "Best-in-class monochromatic PV vs 35% baseline" },
+                      { key: "large_aperture", label: "Large aperture", desc: "2× diameter = 4× collection area" },
+                      { key: "high_power_density", label: "High-density rectenna", desc: "85% RF-DC efficiency at full power" },
+                    ].map((opt) => (
+                      <label key={opt.key} className="flex items-start gap-2.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={optimizations.includes(opt.key)}
+                          onChange={() => toggleOpt(opt.key)}
+                          className="mt-0.5"
+                          style={{ accentColor: "var(--accent)" }}
+                        />
+                        <div>
+                          <div className="text-sm" style={{ color: "var(--text)" }}>{opt.label}</div>
+                          <div className="text-xs" style={{ color: "var(--text-muted)" }}>{opt.desc}</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Range (hidden for space mode) */}
+            {mode !== "space" && (
+              <div>
+                <Label>
+                  Distance{" "}
+                  <span className="font-mono" style={{ color: "var(--text)" }}>
+                    {(rangeM / 1000).toFixed(1)} km
+                  </span>
+                </Label>
+                <input
+                  type="range"
+                  min={500}
+                  max={10000}
+                  step={100}
+                  value={rangeM}
+                  onChange={(e) => setRangeM(Number(e.target.value))}
+                  className="mt-2 w-full"
+                />
+                <div className="flex justify-between text-xs mt-1" style={{ color: "var(--text-subtle)" }}>
+                  <span>0.5 km</span>
+                  <span>10 km</span>
+                </div>
+              </div>
+            )}
+
+            {/* Power */}
+            <div>
+              <Label>
+                Target power{" "}
+                <span className="font-mono" style={{ color: "var(--text)" }}>
+                  {powerKw} kW
+                </span>
+              </Label>
               <input
                 type="range"
                 min={1}
-                max={50}
-                step={0.5}
+                max={mode === "space" ? 1000 : 50}
+                step={mode === "space" ? 10 : 0.5}
                 value={powerKw}
                 onChange={(e) => setPowerKw(Number(e.target.value))}
-                className="w-full accent-blue-500"
+                className="mt-2 w-full"
               />
-              <div className="flex justify-between text-xs text-gray-600 mt-1">
+              <div className="flex justify-between text-xs mt-1" style={{ color: "var(--text-subtle)" }}>
                 <span>1 kW</span>
-                <span>50 kW</span>
+                <span>{mode === "space" ? "1,000 kW" : "50 kW"}</span>
               </div>
+              {mode !== "space" && (
+                <p className="text-xs mt-1" style={{ color: "var(--text-subtle)" }}>
+                  Typical small FOB: 15 kW · Squad outpost: 5 kW · Company FOB: 50 kW
+                </p>
+              )}
             </div>
 
-            {/* Condition */}
-            <div className="mb-6">
-              <label className="text-xs text-gray-400 uppercase tracking-wider block mb-2">
-                Atmospheric Condition
-              </label>
+            {/* Weather */}
+            <div>
+              <Label>Weather</Label>
               <select
                 value={condition}
                 onChange={(e) => setCondition(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500"
+                className="mt-2 w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
+                style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text)" }}
               >
-                <option value="clear">Clear</option>
+                <option value="clear">Clear sky</option>
                 <option value="haze">Haze</option>
-                <option value="smoke">Smoke</option>
+                <option value="smoke">Smoke / Battlefield</option>
                 <option value="rain">Rain</option>
+                {mode === "space" && <option value="fog">Fog / Cloud cover</option>}
               </select>
             </div>
 
+            {/* Run button */}
             <button
               onClick={runSim}
               disabled={loading}
-              className="w-full py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-bold rounded-lg transition-all text-sm uppercase tracking-wider shadow-lg shadow-green-900/30"
+              className="w-full py-3 rounded-lg text-sm font-semibold transition-all"
+              style={{
+                background: loading ? "rgba(99,102,241,0.4)" : "var(--accent)",
+                color: "#fff",
+                opacity: loading ? 0.7 : 1,
+                cursor: loading ? "not-allowed" : "pointer",
+              }}
             >
-              {loading ? "⟳ Computing..." : "▶ Run Simulation"}
+              {loading ? "Running simulation…" : "Run Simulation"}
             </button>
           </div>
 
-          {/* Info */}
-          <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4 text-xs text-gray-500 space-y-1.5">
-            <div className="text-gray-400 font-mono text-xs mb-2">PHYSICS MODELS (v3 — validated 2025)</div>
-            <div>• Laser: Gaussian beam + M² + Fried r₀ + Strehl + pointing jitter</div>
-            <div>• Laser atmo: 0.05 dB/km (clear), 1.0 (haze), 0.2 (rain), fog=BLOCK</div>
-            <div>• Microwave: Friis + 5.8 GHz phased array + Ruze phase error</div>
-            <div>• MW rain: ITU-R P.838-3 (10→0.07, 25→0.22, 50→0.44 dB/km)</div>
-            <div>• Rectenna: GaN power-density curve (85% @≥2W, 65% @low power)</div>
-            <div>• MW: fixed realistic hardware (no back-calculation to target)</div>
-            <div>• System overhead: ×0.65, capped at 35% (DARPA PRAD anchor)</div>
-            <div>• Anchor: DARPA POWER PRAD 2025 — 800W @ 8.6 km, ~20% eff</div>
-            <div>• Economics: DoD fully-burdened fuel $12/L, convoy $600/mile</div>
+          {/* Results Area */}
+          <div>
+            {error && (
+              <div
+                className="rounded-xl p-4 text-sm mb-5"
+                style={{ background: "rgba(127,29,29,0.15)", border: "1px solid rgba(127,29,29,0.6)", color: "#fca5a5" }}
+              >
+                <strong>Error:</strong> {error}
+              </div>
+            )}
+
+            {loading && (
+              <div className="flex flex-col items-center justify-center h-80">
+                <div className="text-4xl animate-pulse mb-4" style={{ color: "var(--accent)" }}>◎</div>
+                <p className="text-sm" style={{ color: "var(--text-muted)" }}>Running physics simulation…</p>
+              </div>
+            )}
+
+            {!result && !loading && !error && (
+              <div
+                className="flex flex-col items-center justify-center h-80 text-center rounded-xl"
+                style={{ border: "1px dashed var(--border)" }}
+              >
+                <div className="text-4xl font-light" style={{ color: "var(--border-bright)" }}>◎</div>
+                <p className="mt-4 text-sm" style={{ color: "var(--text-muted)" }}>
+                  Loading default scenario…
+                </p>
+              </div>
+            )}
+
+            {result && !loading && (() => {
+              const r = result as { mode: string };
+              if (r.mode === "compare") return <ComparePanel result={result as CompareResult} />;
+              if (r.mode === "optimized") return <OptimizedResultPanel result={result as OptimizedResult} />;
+              if (r.mode === "space_laser" || r.mode === "space_microwave") return <SpaceResultPanel result={result as SpaceResult} />;
+              return <ResultPanel result={result as SimResult} />;
+            })()}
           </div>
         </div>
+      </main>
 
-        {/* Results panel */}
-        <div className="min-h-[500px]">
-          {!result && !loading && !error && (
-            <div className="flex flex-col items-center justify-center h-full text-gray-600 py-20 bg-gray-900/30 border border-gray-800 rounded-xl">
-              <div className="text-5xl mb-4">⚡</div>
-              <p className="text-lg font-mono">Configure and run a simulation</p>
-              <p className="text-sm mt-2">Results will appear here — hardware auto-sized to target</p>
-            </div>
-          )}
-
-          {error && (
-            <div className="bg-red-900/20 border border-red-700 rounded-xl p-4 text-red-400 text-sm">
-              <strong>Error:</strong> {error}
-            </div>
-          )}
-
-          {loading && (
-            <div className="flex flex-col items-center justify-center h-full py-20">
-              <div className="text-4xl animate-pulse mb-4">⟳</div>
-              <p className="text-gray-400 font-mono">Running physics simulation...</p>
-            </div>
-          )}
-
-          {result && !loading && (
-            <div>
-              {result.mode === "compare" ? (
-                <ComparePanel result={result as CompareResult} />
-              ) : (
-                <ResultPanel result={result as SimResult} />
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Footer */}
+      <footer
+        className="mt-16 py-6 px-6 text-center text-xs"
+        style={{ borderTop: "1px solid var(--border)", color: "var(--text-subtle)" }}
+      >
+        Physics validated against ITU-R P.838-3 · DARPA POWER PRAD 2025 · JAXA SSPS 2021 · NRL PRAM 2021 · Caltech MAPLE 2023
+      </footer>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { sweep } from "@/lib/api";
 import {
   LineChart,
@@ -12,6 +12,7 @@ import {
   Legend,
   ReferenceLine,
   ResponsiveContainer,
+  Label,
 } from "recharts";
 
 type SweepPoint = {
@@ -507,13 +508,25 @@ export default function SweepPage() {
   }, []);
 
   // Auto-run on load
+  const didInitRef = React.useRef(false);
   useEffect(() => {
+    didInitRef.current = true;
     runSweep("laser", powerKw);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Merge laser + microwave (primary + optional comparison) into one chart dataset
-  function buildChartData() {
+  // Debounced auto-re-run when powerKw changes (after initial load)
+  useEffect(() => {
+    if (!didInitRef.current) return;
+    const timer = setTimeout(() => {
+      runSweep("laser", powerKw);
+      if (comparePowerKw !== null) runCompare(comparePowerKw);
+    }, 600);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [powerKw]);
+
+  const chartData = useMemo(() => {
     const byRange: Record<number, PivotRow> = {};
     const addPts = (pts: SweepPoint[], prefix: string) => {
       for (const pt of pts) {
@@ -530,49 +543,37 @@ export default function SweepPage() {
       addPts(compareMwData, "cmp_mw_");
     }
     return Object.values(byRange).sort((a, b) => a.range_km - b.range_km);
-  }
+  }, [laserData, mwData, compareLaserData, compareMwData, comparePowerKw]);
 
-  const laserConditions = laserData.length ? Array.from(new Set(laserData.map(p => p.condition))) : [];
-  const mwConditions = mwData.length ? Array.from(new Set(mwData.map(p => p.condition))) : [];
-  const cmpLaserConditions = compareLaserData.length ? Array.from(new Set(compareLaserData.map(p => p.condition))) : [];
-  const cmpMwConditions = compareMwData.length ? Array.from(new Set(compareMwData.map(p => p.condition))) : [];
-  const chartData = buildChartData();
+  const allLines = useMemo(() => {
+    const laserConditions = laserData.length ? Array.from(new Set(laserData.map(p => p.condition))) : [];
+    const mwConditions = mwData.length ? Array.from(new Set(mwData.map(p => p.condition))) : [];
+    const cmpLaserConditions = compareLaserData.length ? Array.from(new Set(compareLaserData.map(p => p.condition))) : [];
+    const cmpMwConditions = compareMwData.length ? Array.from(new Set(compareMwData.map(p => p.condition))) : [];
+
+    return [
+      ...laserConditions.map(c => ({
+        key: `laser_${c}`, label: `Laser — ${CONDITION_META[c]?.label ?? c} (${powerKw}kW)`,
+        color: CONDITION_META[c]?.color ?? "#888", dash: CONDITION_META[c]?.dash, strokeWidth: 2.5, opacity: 1,
+      })),
+      ...mwConditions.map(c => ({
+        key: `mw_${c}`, label: `μWave — ${CONDITION_META[c]?.label ?? c} (${powerKw}kW)`,
+        color: CONDITION_META[c]?.color ?? "#888", dash: "10 5", strokeWidth: 1, opacity: 0.7,
+      })),
+      ...(comparePowerKw !== null ? cmpLaserConditions.map(c => ({
+        key: `cmp_laser_${c}`, label: `Laser — ${CONDITION_META[c]?.label ?? c} (${comparePowerKw}kW ◈)`,
+        color: CONDITION_META[c]?.color ?? "#888", dash: "4 3", strokeWidth: 1.5, opacity: 0.45,
+      })) : []),
+      ...(comparePowerKw !== null ? cmpMwConditions.map(c => ({
+        key: `cmp_mw_${c}`, label: `μWave — ${CONDITION_META[c]?.label ?? c} (${comparePowerKw}kW ◈)`,
+        color: CONDITION_META[c]?.color ?? "#888", dash: "2 4", strokeWidth: 1, opacity: 0.3,
+      })) : []),
+    ];
+  }, [laserData, mwData, compareLaserData, compareMwData, comparePowerKw, powerKw]);
 
   const hasData = laserData.length > 0 || mwData.length > 0;
-
-  const laserLines = laserConditions.map(c => ({
-    key: `laser_${c}`,
-    label: `Laser — ${CONDITION_META[c]?.label ?? c} (${powerKw}kW)`,
-    color: CONDITION_META[c]?.color ?? "#888",
-    dash: CONDITION_META[c]?.dash,
-    strokeWidth: 2.5,
-    opacity: 1,
-  }));
-  const mwLines = mwConditions.map(c => ({
-    key: `mw_${c}`,
-    label: `Microwave — ${CONDITION_META[c]?.label ?? c} (${powerKw}kW)`,
-    color: CONDITION_META[c]?.color ?? "#888",
-    dash: "10 5",
-    strokeWidth: 1.5,
-    opacity: 1,
-  }));
-  const cmpLaserLines = comparePowerKw !== null ? cmpLaserConditions.map(c => ({
-    key: `cmp_laser_${c}`,
-    label: `Laser — ${CONDITION_META[c]?.label ?? c} (${comparePowerKw}kW ◈)`,
-    color: CONDITION_META[c]?.color ?? "#888",
-    dash: "4 3",
-    strokeWidth: 1.5,
-    opacity: 0.5,
-  })) : [];
-  const cmpMwLines = comparePowerKw !== null ? cmpMwConditions.map(c => ({
-    key: `cmp_mw_${c}`,
-    label: `Microwave — ${CONDITION_META[c]?.label ?? c} (${comparePowerKw}kW ◈)`,
-    color: CONDITION_META[c]?.color ?? "#888",
-    dash: "2 4",
-    strokeWidth: 1,
-    opacity: 0.45,
-  })) : [];
-  const allLines = [...laserLines, ...mwLines, ...cmpLaserLines, ...cmpMwLines];
+  const laserConditions = useMemo(() => laserData.length ? Array.from(new Set(laserData.map(p => p.condition))) : [], [laserData]);
+  const mwConditions = useMemo(() => mwData.length ? Array.from(new Set(mwData.map(p => p.condition))) : [], [mwData]);
 
   return (
     <div
@@ -780,43 +781,53 @@ export default function SweepPage() {
               </div>
             )}
           </div>
-          <ResponsiveContainer width="100%" height={400}>
-            <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#252530" />
+          <ResponsiveContainer width="100%" height={420}>
+            <LineChart data={chartData} margin={{ top: 8, right: 24, left: 16, bottom: 36 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2a" />
               <XAxis
                 dataKey="range_km"
                 tick={{ fill: "#8888a0", fontSize: 11 }}
-                label={{ value: "Range (km)", position: "insideBottom", offset: -8, fill: "#55556a", fontSize: 11 }}
+                tickLine={false}
+                label={{ value: "Range (km)", position: "insideBottom", offset: -16, fill: "#55556a", fontSize: 11 }}
               />
               <YAxis
                 tick={{ fill: "#8888a0", fontSize: 11 }}
-                label={{ value: "Sys. Efficiency (%)", angle: -90, position: "insideLeft", offset: 10, fill: "#55556a", fontSize: 10 }}
+                tickLine={false}
+                width={46}
+                label={{ value: "Efficiency (%)", angle: -90, position: "insideLeft", dx: -6, fill: "#55556a", fontSize: 10 }}
               />
               <Tooltip
-                contentStyle={{ background: "#18181f", border: "1px solid #252530", borderRadius: 8, fontSize: 11, color: "#f0f0f5" }}
-                labelFormatter={(v) => `${v} km`}
+                contentStyle={{ background: "#111118", border: "1px solid #252530", borderRadius: 10, fontSize: 11, color: "#f0f0f5", padding: "8px 12px" }}
+                labelFormatter={(v) => `Range: ${v} km`}
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                formatter={(v: any) => [`${typeof v === "number" ? v.toFixed(2) : v}%`]}
+                formatter={(v: any) => [`${typeof v === "number" ? v.toFixed(3) : v}%`]}
+                cursor={{ stroke: "#252548", strokeWidth: 1 }}
               />
               <Legend
-                wrapperStyle={{ fontSize: 10, color: "#8888a0", paddingTop: 12 }}
-                iconType="line"
+                wrapperStyle={{ fontSize: 10, color: "#8888a0", paddingTop: 8 }}
+                iconType="square"
+                iconSize={8}
               />
-              {/* Regime reference lines */}
-              <ReferenceLine x={0.5} stroke="#252548" strokeDasharray="6 3" label={{ value: "≤500m", fill: "#55556a", fontSize: 9, position: "top" }} />
-              <ReferenceLine x={2.0} stroke="#252548" strokeDasharray="6 3" label={{ value: "2km FOB", fill: "#55556a", fontSize: 9, position: "top" }} />
-              <ReferenceLine x={5.0} stroke="#3d3d20" strokeDasharray="4 4" label={{ value: "5km relay zone", fill: "#6b6b20", fontSize: 9, position: "top" }} />
-              {/* Viable minimum efficiency line (1%) */}
-              <ReferenceLine y={1} stroke="#252530" strokeDasharray="2 6" label={{ value: "1% floor", fill: "#55556a", fontSize: 9, position: "insideRight" }} />
+
+              {/* Regime reference lines — labels at insideBottom to avoid crowding at top */}
+              <ReferenceLine x={0.5} stroke="#252540" strokeDasharray="6 3">
+                <Label value="500m" position="insideBottomRight" style={{ fontSize: 9, fill: "#44445a" }} />
+              </ReferenceLine>
+              <ReferenceLine x={2.0} stroke="#252540" strokeDasharray="6 3">
+                <Label value="2km" position="insideBottomRight" style={{ fontSize: 9, fill: "#44445a" }} />
+              </ReferenceLine>
+              <ReferenceLine x={5.0} stroke="#303020" strokeDasharray="4 4">
+                <Label value="5km relay" position="insideBottomRight" style={{ fontSize: 9, fill: "#505030" }} />
+              </ReferenceLine>
+              <ReferenceLine y={1} stroke="#1e1e2a" strokeDasharray="2 6">
+                <Label value="1% min" position="insideRight" style={{ fontSize: 9, fill: "#44445a" }} />
+              </ReferenceLine>
 
               {/* Selected preset pin */}
               {selectedPreset && !selectedPreset.nearField && (
-                <ReferenceLine
-                  x={selectedPreset.range_km}
-                  stroke="var(--accent)"
-                  strokeWidth={2}
-                  label={{ value: `▼ ${selectedPreset.label}`, fill: "var(--accent)", fontSize: 10, position: "top" }}
-                />
+                <ReferenceLine x={selectedPreset.range_km} stroke="#6366f1" strokeWidth={1.5}>
+                  <Label value={`▼ ${selectedPreset.label}`} position="insideTopRight" style={{ fontSize: 10, fill: "#6366f1", fontWeight: 600 }} />
+                </ReferenceLine>
               )}
 
               {allLines.map((l) => (
@@ -830,7 +841,9 @@ export default function SweepPage() {
                   strokeDasharray={l.dash}
                   strokeOpacity={l.opacity}
                   dot={false}
+                  activeDot={{ r: 3, strokeWidth: 0 }}
                   connectNulls={false}
+                  isAnimationActive={false}
                 />
               ))}
             </LineChart>

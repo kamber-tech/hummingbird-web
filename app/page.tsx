@@ -1735,27 +1735,12 @@ export default function SimulatorPage() {
 
   return (
     <div className="min-h-screen" style={{ background: "var(--bg)" }}>
-      {/* Header */}
-      <header className="px-6 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div>
-            <span className="font-semibold text-lg tracking-tight" style={{ color: "var(--text)" }}>
-              Aether
-            </span>
-            <span className="text-sm ml-3" style={{ color: "var(--text-muted)" }}>
-              WPT Simulator
-            </span>
-          </div>
-
-        </div>
-      </header>
-
-      <main className="max-w-6xl mx-auto px-6 py-12">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-12">
         {/* Hero — FOB-first framing, or use-case context when a scenario is selected */}
         {!selectedUseCase ? (
           <div className="mb-10 max-w-2xl">
-            <h1 className="text-3xl font-bold leading-snug" style={{ color: "var(--text)" }}>
-              Deliver power to a forward operating base —<br />
+            <h1 className="text-2xl sm:text-3xl font-bold leading-snug" style={{ color: "var(--text)" }}>
+              Deliver power to a forward operating base —{" "}
               <span style={{ color: "var(--accent)" }}>no fuel convoys required</span>
             </h1>
             <p className="mt-3 text-base leading-relaxed" style={{ color: "var(--text-muted)" }}>
@@ -1763,7 +1748,7 @@ export default function SimulatorPage() {
               Calculate how much power reaches the FOB, what hardware it takes, and how many
               dangerous resupply missions it eliminates.
             </p>
-            <div className="flex gap-8 mt-6 flex-wrap">
+            <div className="grid grid-cols-3 gap-3 mt-6">
               <Stat label="Convoys eliminated per year" value="79+" sub="per 15 kW laser system at 2 km" />
               <Stat label="Fuel saved per day" value="108+ L" sub="diesel offset · 15 kW at 2 km" />
               <Stat label="Real-world anchor" value="800 W @ 8.6 km" sub="DARPA POWER PRAD 2025" />
@@ -1802,7 +1787,7 @@ export default function SimulatorPage() {
             {/* Mode selector — primary modes first, space as secondary */}
             <div>
               <Label>Mode</Label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+              <div className="grid grid-cols-3 gap-2 mt-2">
                 {(["laser", "microwave", "compare"] as const).map((m) => (
                   <ModeButton key={m} active={mode === m} onClick={() => setMode(m)}>
                     {m === "laser" ? "Laser" : m === "microwave" ? "Microwave" : "Compare"}

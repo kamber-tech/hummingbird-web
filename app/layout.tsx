@@ -17,20 +17,20 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.className} bg-gray-950 text-gray-100 min-h-screen`}>
-        <nav className="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-50">
+      <body className={`${inter.className} min-h-screen`} style={{ background: "var(--bg)", color: "var(--text)" }}>
+        <nav className="backdrop-blur sticky top-0 z-50" style={{ borderBottom: "1px solid var(--border)", background: "rgba(17,17,24,0.9)" }}>
           <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-4 sm:gap-8">
             <div className="flex items-center gap-2">
-              <span className="text-green-400 font-mono text-lg font-bold">⚡ AETHER</span>
+              <span className="font-mono text-lg font-bold" style={{ color: "var(--accent)" }}>⚡ AETHER</span>
             </div>
             <div className="flex gap-4 sm:gap-6 text-sm whitespace-nowrap">
-              <Link href="/" className="text-gray-300 hover:text-green-400 transition-colors font-medium">
+              <Link href="/" className="transition-colors font-medium" style={{ color: "var(--text-muted)" }}>
                 Simulator
               </Link>
-              <Link href="/sweep" className="text-gray-300 hover:text-green-400 transition-colors font-medium">
+              <Link href="/sweep" className="transition-colors font-medium" style={{ color: "var(--text-muted)" }}>
                 Range Sweep
               </Link>
-              <Link href="/financial" className="text-gray-300 hover:text-green-400 transition-colors font-medium">
+              <Link href="/financial" className="transition-colors font-medium" style={{ color: "var(--text-muted)" }}>
                 Financial
               </Link>
             </div>

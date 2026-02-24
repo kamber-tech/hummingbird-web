@@ -632,10 +632,10 @@ export default function SweepPage() {
                     : { background: "var(--surface)", border: "1px solid var(--border)" }
                 }
               >
-                <div className="text-xs font-semibold" style={{ color: active ? "var(--accent)" : "var(--text)" }}>
+                <div className="text-xs font-semibold whitespace-nowrap" style={{ color: active ? "var(--accent)" : "var(--text)" }}>
                   {p.label}
                 </div>
-                <div className="text-[10px] mt-0.5 font-mono" style={{ color: "var(--text-muted)" }}>
+                <div className="text-[10px] mt-0.5 font-mono whitespace-nowrap" style={{ color: "var(--text-muted)" }}>
                   {p.sublabel}
                 </div>
               </button>
@@ -1147,7 +1147,7 @@ export default function SweepPage() {
             <Card>
               <SectionHeader>Mode Selection Decision Matrix</SectionHeader>
               <div className="overflow-x-auto">
-              <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+              <div className="rounded-lg overflow-hidden min-w-[560px]" style={{ border: "1px solid var(--border)" }}>
                 {[
                   { range: "0 – 200 m", clear: "Laser or Microwave", smoke: "Microwave", rain: "Microwave", note: "Near-field; both viable" },
                   { range: "200 – 500 m", clear: "Laser", smoke: "Microwave", rain: "Microwave", note: "Laser efficiency >>>" },

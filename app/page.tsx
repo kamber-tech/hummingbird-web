@@ -540,11 +540,11 @@ function FinancialsTab({ result }: { result: SimResult }) {
               </span>
               {" "}after deployment · 5-year net:{" "}
               <span className="font-semibold" style={{ color: fiveYearRows[4].net >= 0 ? "var(--green)" : "#f97316" }}>
-                {fiveYearRows[4].net >= 0 ? "+" : ""}${fmt(fiveYearRows[4].net)}
+                {fiveYearRows[4].net >= 0 ? "+" : "-"}${fmt(Math.abs(fiveYearRows[4].net))}
               </span>
               {" "}· Net annual value after opex:{" "}
               <span className="font-semibold" style={{ color: netVal >= 0 ? "var(--green)" : "#f97316" }}>
-                {netVal >= 0 ? "+" : ""}${fmt(netVal)}
+                {netVal >= 0 ? "+" : "-"}${fmt(Math.abs(netVal))}
               </span>/yr
             </div>
           )}

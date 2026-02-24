@@ -1746,23 +1746,7 @@ export default function SimulatorPage() {
               WPT Simulator
             </span>
           </div>
-          <div className="flex items-center gap-3">
-            <span
-              className="text-xs px-3 py-1 rounded-full"
-              style={{ color: "var(--text-subtle)", background: "var(--surface)", border: "1px solid var(--border)" }}
-            >
-              Physics v3 · 2025
-            </span>
-            <a
-              href="/qa"
-              className="text-xs transition-colors"
-              style={{ color: "var(--text-subtle)" }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--text-muted)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--text-subtle)"; }}
-            >
-              Reference Q&amp;A
-            </a>
-          </div>
+
         </div>
       </header>
 
@@ -2051,13 +2035,7 @@ export default function SimulatorPage() {
         </div>
       </main>
 
-      {/* Footer */}
-      <footer
-        className="mt-16 py-6 px-6 text-center text-xs"
-        style={{ borderTop: "1px solid var(--border)", color: "var(--text-subtle)" }}
-      >
-        Physics validated against ITU-R P.838-3 · DARPA POWER PRAD 2025 · JAXA SSPS 2021 · NRL PRAM 2021 · Caltech MAPLE 2023
-      </footer>
+
     </div>
   );
 }

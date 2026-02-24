@@ -738,13 +738,7 @@ export default function QAPage() {
           </div>
         )}
 
-        {/* Footer note */}
-        <div
-          className="mt-12 text-xs text-center"
-          style={{ color: "var(--text-subtle)" }}
-        >
-          Physics validated against ITU-R P.838-3 · DARPA POWER PRAD 2025 · JAXA SSPS 2021 · NRL PRAM 2021 · Caltech MAPLE 2023
-        </div>
+
       </main>
     </div>
   );

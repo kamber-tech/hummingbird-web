@@ -1303,11 +1303,7 @@ export default function SweepPage() {
         </Card>
       )}
 
-      {/* ── Footer note ── */}
-      <div className="text-xs text-center" style={{ color: "var(--text-subtle)" }}>
-        Physics v3 · 2025 · ITU-R P.838-3 rain model · Ruze/Fried turbulence · GaN rectenna power-density efficiency
-        · Real-world anchor: DARPA PRAD 2025 (~20% sys eff @ 8.6 km) · JAXA SSPS 2021 (22% @ 50 m)
-      </div>
+
     </div>
   );
 }

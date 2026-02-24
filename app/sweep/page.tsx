@@ -470,6 +470,7 @@ export default function SweepPage() {
   const [showTable, setShowTable] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<SweepPreset | null>(null);
   const [showAllConditions, setShowAllConditions] = useState(false);
+  const [yMetric, setYMetric] = useState<"system_eff_pct" | "dc_power_kw" | "fuel_saved_l_day">("system_eff_pct");
   const [comparePowerKw, setComparePowerKw] = useState<number | null>(null);
   const [compareLaserData, setCompareLaserData] = useState<SweepPoint[]>([]);
   const [compareMwData, setCompareMwData] = useState<SweepPoint[]>([]);
@@ -532,8 +533,9 @@ export default function SweepPage() {
     const addPts = (pts: SweepPoint[], prefix: string) => {
       for (const pt of pts) {
         if (!byRange[pt.range_km]) byRange[pt.range_km] = { range_km: pt.range_km };
-        if (pt.system_eff_pct != null && !isNaN(pt.system_eff_pct)) {
-          byRange[pt.range_km][`${prefix}${pt.condition}`] = parseFloat(pt.system_eff_pct.toFixed(3));
+        const val = pt[yMetric];
+        if (val != null && !isNaN(val as number)) {
+          byRange[pt.range_km][`${prefix}${pt.condition}`] = parseFloat((val as number).toFixed(4));
         }
       }
     };
@@ -544,7 +546,7 @@ export default function SweepPage() {
       addPts(compareMwData, "cmp_mw_");
     }
     return Object.values(byRange).sort((a, b) => a.range_km - b.range_km);
-  }, [laserData, mwData, compareLaserData, compareMwData, comparePowerKw]);
+  }, [laserData, mwData, compareLaserData, compareMwData, comparePowerKw, yMetric]);
 
   const allLines = useMemo(() => {
     const laserConditions = laserData.length ? Array.from(new Set(laserData.map(p => p.condition))) : [];
@@ -775,20 +777,43 @@ export default function SweepPage() {
       {hasData && (
         <Card>
           <div className="flex items-start justify-between gap-4 mb-4">
-            <div>
+            <div className="flex-1 min-w-0">
               <div className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-subtle)" }}>
-                System Efficiency (%) vs Range (km) — All Conditions, Laser + Microwave
+                {yMetric === "system_eff_pct" ? "System Efficiency (%) vs Range (km)"
+                  : yMetric === "dc_power_kw" ? "DC Power Delivered (kW) vs Range (km)"
+                  : "Fuel Saved (L/day) vs Range (km)"}
               </div>
               <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-                {showAllConditions
-                  ? "All atmospheric conditions — solid = laser, dashed = microwave."
-                  : "3 key curves: laser in clear sky, laser in battlefield smoke, and microwave (clear sky) for comparison."
-                }
-                {comparePowerKw !== null && " Faded ◈ lines = comparison power level."}
-                {" "}Fog-blocked conditions show as 0% or gap.
+                {showAllConditions ? "All atmospheric conditions." : "3 key curves: laser clear, laser smoke, microwave clear."}
+                {comparePowerKw !== null && " Faded ◈ = comparison power level."}
               </p>
+              {yMetric === "system_eff_pct" && (
+                <p className="text-xs mt-1.5 px-2 py-1 rounded" style={{ background: "rgba(251,146,60,0.08)", border: "1px solid rgba(251,146,60,0.2)", color: "#fb923c" }}>
+                  Efficiency % is power-independent — changing kW won&apos;t shift these curves. Switch to &quot;DC Power&quot; or &quot;Fuel Saved&quot; to see the power slider take effect.
+                </p>
+              )}
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+              {/* Y-axis metric selector */}
+              <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+                {([
+                  { key: "system_eff_pct", label: "Efficiency %" },
+                  { key: "dc_power_kw", label: "DC Power" },
+                  { key: "fuel_saved_l_day", label: "Fuel Saved" },
+                ] as const).map((m) => (
+                  <button
+                    key={m.key}
+                    onClick={() => setYMetric(m.key)}
+                    className="px-2.5 py-1 text-xs transition-all"
+                    style={yMetric === m.key
+                      ? { background: "var(--accent)", color: "#fff" }
+                      : { background: "var(--surface-2)", color: "var(--text-muted)" }
+                    }
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
               {comparePowerKw !== null && (
                 <div className="text-xs px-2.5 py-1 rounded-lg font-mono" style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
                   {powerKw} kW vs <span style={{ color: "var(--accent)" }}>{comparePowerKw} kW ◈</span>
@@ -818,14 +843,22 @@ export default function SweepPage() {
               <YAxis
                 tick={{ fill: "#8888a0", fontSize: 11 }}
                 tickLine={false}
-                width={46}
-                label={{ value: "Efficiency (%)", angle: -90, position: "insideLeft", dx: -6, fill: "#55556a", fontSize: 10 }}
+                width={52}
+                label={{
+                  value: yMetric === "system_eff_pct" ? "Efficiency (%)" : yMetric === "dc_power_kw" ? "DC Power (kW)" : "Fuel (L/day)",
+                  angle: -90, position: "insideLeft", dx: -6, fill: "#55556a", fontSize: 10
+                }}
               />
               <Tooltip
                 contentStyle={{ background: "#111118", border: "1px solid #252530", borderRadius: 10, fontSize: 11, color: "#f0f0f5", padding: "8px 12px" }}
                 labelFormatter={(v) => `Range: ${v} km`}
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                formatter={(v: any) => [`${typeof v === "number" ? v.toFixed(3) : v}%`]}
+                formatter={(v: any) => {
+                  if (typeof v !== "number") return ["—"];
+                  if (yMetric === "system_eff_pct") return [`${v.toFixed(3)}%`];
+                  if (yMetric === "dc_power_kw") return [`${v.toFixed(3)} kW`];
+                  return [`${v.toFixed(1)} L/day`];
+                }}
                 cursor={{ stroke: "#252548", strokeWidth: 1 }}
               />
               <Legend
@@ -844,9 +877,11 @@ export default function SweepPage() {
               <ReferenceLine x={5.0} stroke="#303020" strokeDasharray="4 4">
                 <Label value="5km relay" position="insideBottomRight" style={{ fontSize: 9, fill: "#505030" }} />
               </ReferenceLine>
-              <ReferenceLine y={1} stroke="#1e1e2a" strokeDasharray="2 6">
-                <Label value="1% min" position="insideRight" style={{ fontSize: 9, fill: "#44445a" }} />
-              </ReferenceLine>
+              {yMetric === "system_eff_pct" && (
+                <ReferenceLine y={1} stroke="#1e1e2a" strokeDasharray="2 6">
+                  <Label value="1% min" position="insideRight" style={{ fontSize: 9, fill: "#44445a" }} />
+                </ReferenceLine>
+              )}
 
               {/* Selected preset pin */}
               {selectedPreset && !selectedPreset.nearField && (

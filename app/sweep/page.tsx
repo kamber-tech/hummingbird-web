@@ -54,7 +54,7 @@ const SWEEP_PRESETS: SweepPreset[] = [
     preferredMode: "laser",
     regimeIdx: 0,
     nearField: true,
-    note: "Operates in the near-field zone — off the left edge of this chart. Beam radius < 0.1 mm. Geometric loss is negligible. Dominant losses: PA (~45%) + PV conversion (~35%). Best-case system efficiency: 30–40%.",
+    note: "Operates in the near-field zone — off the left edge of this chart. Beam radius < 0.1 mm. Geometric loss is negligible. Dominant losses: PA (~40%) + PV conversion (~43% actual). Best-case system efficiency: 20–35%.",
   },
   {
     id: "drone_isr",
@@ -199,7 +199,7 @@ const REGIMES = [
     problems: [
       "Beam tightly confined — minimal geometric loss for laser",
       "Microwave already in far-field beyond 13 m (Rayleigh distance for 0.83 m array at 5.8 GHz)",
-      "Dominant losses: PA efficiency (~45%) and PV conversion (~35%)",
+      "Dominant losses: PA efficiency (~40%) and PV conversion (~43% actual, after temperature derating)",
     ],
     math: [
       "Laser at 300 m, 0.3 m aperture, 1070 nm: beam radius = (λ/πw₀)·R = 0.7 mm → receiver captures 100% of beam",
@@ -208,7 +208,7 @@ const REGIMES = [
       "System efficiency ceiling (microwave): ~2–4% at 300 m (beam spread dominates)",
     ],
     solutions: [
-      { fix: "InP monochromatic PV cells", gain: "+20 points efficiency (35% → 55% PV)" },
+      { fix: "InP monochromatic PV cells", gain: "+12 points efficiency (43% actual → 55% InP)" },
       { fix: "Larger TX aperture (2× diameter)", gain: "+6 dB geometric capture = 4× more power at receiver" },
       { fix: "GaN PA next-gen (65%)", gain: "+10 points wall-plug efficiency vs standard 55%" },
     ],
@@ -335,7 +335,7 @@ const LOSS_MECHANISMS = [
     title: "Conversion Efficiency Chain",
     icon: "⚡",
     color: "#22c55e",
-    laser: "Wall-plug → photon: 45–60% (diode-pumped laser). Photon → DC (PV): 35% baseline for monochromatic GaAs PV; 55% for InP monochromatic cells (2023, Sandia). Total chain (laser + PV): 16–33%.",
+    laser: "Wall-plug → photon: 40–60% (diode-pumped fiber laser). Photon → DC (PV): 50% base efficiency for monochromatic GaAs PV, ×0.86 temperature derating = 43% actual. InP monochromatic cells: 55% (2023, Sandia). Total chain: wall-plug → DC ~6–15% typical deployed.",
     microwave: "Wall-plug → RF (GaN PA): 50–60%. RF → DC (rectenna): 85% at full power density, 52% at low power density (<25 mW/cm²). At long range, power density at rectenna is micro-watts → rectenna efficiency collapses to 10–20%.",
     formula: "η_sys = η_wallplug × η_atm × η_geometric × η_conversion\n(each term ≤ 1; all multiplied together)",
     fix: "InP monochromatic PV: 55% conversion efficiency (commercializing 2025–2026). High-power-density rectenna: maintain >1 W/cm² for 85% rectification — requires beam tight enough at range or multi-element focusing array.",
@@ -426,13 +426,13 @@ NV invisibility: standard Gen 2/3 NV tubes sensitive to 600–900 nm only. 1550 
   {
     title: "InP Monochromatic PV Cells",
     status: "Lab-demonstrated 55%; commercializing 2025–2026 (Sandia, Alta Devices)",
-    gain: "+20 percentage points conversion efficiency (35% → 55%)",
+    gain: "+12 percentage points conversion efficiency (43% actual → 55% InP)",
     cost: "$50–200/cm² at present; volume production expected to reduce to $5–20/cm²",
     trl: "TRL 5–6 (single-cell demonstrated; module-level in progress)",
     detail: `Standard PV cells convert broadband sunlight at 20–25% efficiency. Monochromatic PV cells are optimized for a single laser wavelength — bandgap matched to photon energy. At 1070 nm: GaAs cells achieve 45–50%. At 1550 nm: InP cells achieve 50–55% (Sandia 2023).
 
-Current simulator assumes 35% — the conservative baseline for available fielded systems.
-Upgrade to InP: 55% → +57% relative efficiency improvement.
+Current simulator: 50% PV base × 86% temperature derating = 43% actual PV efficiency.
+Upgrade to InP: 55% actual → +28% relative efficiency improvement.
 Example: 2 km clear sky, 15 kW target — current: 8.2% sys efficiency. With InP: 12.6% sys efficiency.
 Weight impact: smaller PV area needed for same power → lighter receiver (UAV payload benefit).`,
   },
@@ -469,6 +469,7 @@ export default function SweepPage() {
   const [expandedSolution, setExpandedSolution] = useState<number | null>(null);
   const [showTable, setShowTable] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<SweepPreset | null>(null);
+  const [showAllConditions, setShowAllConditions] = useState(false);
   const [comparePowerKw, setComparePowerKw] = useState<number | null>(null);
   const [compareLaserData, setCompareLaserData] = useState<SweepPoint[]>([]);
   const [compareMwData, setCompareMwData] = useState<SweepPoint[]>([]);
@@ -551,25 +552,33 @@ export default function SweepPage() {
     const cmpLaserConditions = compareLaserData.length ? Array.from(new Set(compareLaserData.map(p => p.condition))) : [];
     const cmpMwConditions = compareMwData.length ? Array.from(new Set(compareMwData.map(p => p.condition))) : [];
 
+    // In simple mode: only the 3 most important lines
+    const KEY_CONDITIONS = { laser: ["clear", "smoke"], mw: ["clear"] };
+
+    const laserToShow = showAllConditions ? laserConditions : laserConditions.filter(c => KEY_CONDITIONS.laser.includes(c));
+    const mwToShow = showAllConditions ? mwConditions : mwConditions.filter(c => KEY_CONDITIONS.mw.includes(c));
+
     return [
-      ...laserConditions.map(c => ({
-        key: `laser_${c}`, label: `Laser — ${CONDITION_META[c]?.label ?? c} (${powerKw}kW)`,
+      ...laserToShow.map(c => ({
+        key: `laser_${c}`,
+        label: showAllConditions ? `Laser — ${CONDITION_META[c]?.label ?? c}` : (c === "clear" ? "Laser (clear sky)" : "Laser (smoke)"),
         color: CONDITION_META[c]?.color ?? "#888", dash: CONDITION_META[c]?.dash, strokeWidth: 2.5, opacity: 1,
       })),
-      ...mwConditions.map(c => ({
-        key: `mw_${c}`, label: `μWave — ${CONDITION_META[c]?.label ?? c} (${powerKw}kW)`,
-        color: CONDITION_META[c]?.color ?? "#888", dash: "10 5", strokeWidth: 1, opacity: 0.7,
+      ...mwToShow.map(c => ({
+        key: `mw_${c}`,
+        label: showAllConditions ? `μWave — ${CONDITION_META[c]?.label ?? c}` : "Microwave (clear sky)",
+        color: "#a78bfa", dash: "8 4", strokeWidth: 1.5, opacity: 0.8,
       })),
-      ...(comparePowerKw !== null ? cmpLaserConditions.map(c => ({
+      ...(comparePowerKw !== null ? (showAllConditions ? cmpLaserConditions : cmpLaserConditions.filter(c => KEY_CONDITIONS.laser.includes(c))).map(c => ({
         key: `cmp_laser_${c}`, label: `Laser — ${CONDITION_META[c]?.label ?? c} (${comparePowerKw}kW ◈)`,
         color: CONDITION_META[c]?.color ?? "#888", dash: "4 3", strokeWidth: 1.5, opacity: 0.45,
       })) : []),
-      ...(comparePowerKw !== null ? cmpMwConditions.map(c => ({
+      ...(comparePowerKw !== null ? (showAllConditions ? cmpMwConditions : cmpMwConditions.filter(c => KEY_CONDITIONS.mw.includes(c))).map(c => ({
         key: `cmp_mw_${c}`, label: `μWave — ${CONDITION_META[c]?.label ?? c} (${comparePowerKw}kW ◈)`,
-        color: CONDITION_META[c]?.color ?? "#888", dash: "2 4", strokeWidth: 1, opacity: 0.3,
+        color: "#a78bfa", dash: "2 4", strokeWidth: 1, opacity: 0.3,
       })) : []),
     ];
-  }, [laserData, mwData, compareLaserData, compareMwData, comparePowerKw, powerKw]);
+  }, [laserData, mwData, compareLaserData, compareMwData, comparePowerKw, powerKw, showAllConditions]);
 
   const hasData = laserData.length > 0 || mwData.length > 0;
   const laserConditions = useMemo(() => laserData.length ? Array.from(new Set(laserData.map(p => p.condition))) : [], [laserData]);
@@ -771,15 +780,31 @@ export default function SweepPage() {
                 System Efficiency (%) vs Range (km) — All Conditions, Laser + Microwave
               </div>
               <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-                Solid lines = laser. Dashed = microwave. Faded ◈ lines = comparison power level.
-                Fog-blocked conditions appear as 0% or missing.
+                {showAllConditions
+                  ? "All atmospheric conditions — solid = laser, dashed = microwave."
+                  : "3 key curves: laser in clear sky, laser in battlefield smoke, and microwave (clear sky) for comparison."
+                }
+                {comparePowerKw !== null && " Faded ◈ lines = comparison power level."}
+                {" "}Fog-blocked conditions show as 0% or gap.
               </p>
             </div>
-            {comparePowerKw !== null && (
-              <div className="shrink-0 text-xs px-2.5 py-1 rounded-lg font-mono" style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
-                {powerKw} kW vs <span style={{ color: "var(--accent)" }}>{comparePowerKw} kW ◈</span>
-              </div>
-            )}
+            <div className="flex items-center gap-2 shrink-0">
+              {comparePowerKw !== null && (
+                <div className="text-xs px-2.5 py-1 rounded-lg font-mono" style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
+                  {powerKw} kW vs <span style={{ color: "var(--accent)" }}>{comparePowerKw} kW ◈</span>
+                </div>
+              )}
+              <button
+                onClick={() => setShowAllConditions(!showAllConditions)}
+                className="text-xs px-3 py-1 rounded-lg transition-all"
+                style={showAllConditions
+                  ? { background: "var(--surface-2)", color: "var(--text-muted)", border: "1px solid var(--border)" }
+                  : { background: "var(--accent-dim)", color: "var(--accent)", border: "1px solid var(--accent)" }
+                }
+              >
+                {showAllConditions ? "Simple view" : "All conditions"}
+              </button>
+            </div>
           </div>
           <ResponsiveContainer width="100%" height={420}>
             <LineChart data={chartData} margin={{ top: 8, right: 24, left: 16, bottom: 36 }}>
@@ -1012,7 +1037,7 @@ export default function SweepPage() {
                       { step: "Turbulence Strehl (Cn² = 10⁻¹⁴, daytime)", value: "3–15%", db: "−8 to −15 dB" },
                       { step: "Pointing jitter (5 µrad at 2 km)", value: "85%", db: "−0.7 dB" },
                       { step: "Geometric beam capture (0.3 m aperture)", value: "98%", db: "−0.08 dB" },
-                      { step: "Monochromatic PV conversion", value: "35%", db: "−4.6 dB" },
+                      { step: "Monochromatic PV conversion (50% base × 86% derating)", value: "43%", db: "−3.7 dB" },
                       { step: "Total (worst turbulence)", value: "≈ 0.4%", db: "−24 dB" },
                       { step: "Total (best turbulence)", value: "≈ 6–10%", db: "−10 to −12 dB" },
                     ],

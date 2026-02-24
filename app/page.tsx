@@ -380,58 +380,169 @@ function EfficiencyRoadmap({ result }: { result: SimResult }) {
 function FinancialsTab({ result }: { result: SimResult }) {
   const convoys = result.convoys_eliminated_yr;
   const daysPerConvoy = convoys > 0 ? Math.round(365 / convoys) : null;
-  const fuelL = result.fuel_saved_l_day * 365;
-  const paybackMonths = result.total_value_yr_usd > 0 ? Math.round((750000 / result.total_value_yr_usd) * 12) : null;
+  const fuelLPerYr = Math.round(result.fuel_saved_l_day * 365);
+  const fuelCost = result.fuel_cost_saved_yr_usd;
+  const convoyCost = result.convoy_cost_saved_yr_usd;
+  const totalVal = result.total_value_yr_usd;
+  const SYSTEM_COST = 750000;
+  const paybackMonths = totalVal > 0 ? Math.round((SYSTEM_COST / totalVal) * 12) : null;
+  const OPEX_YR = 50000; // estimated annual maintenance + monitoring
+  const netVal = totalVal - OPEX_YR;
 
-  const items = [
-    {
-      label: "Convoys eliminated",
-      value: `${convoys.toFixed(0)} per year`,
-      explain: convoys >= 1
-        ? `That's one fewer fuel resupply mission every ${daysPerConvoy} day${daysPerConvoy === 1 ? "" : "s"}. Each convoy means a crew driving to a forward position — the primary IED exposure risk in most operational environments.`
-        : `At this power level the system offsets a portion of FOB fuel demand, reducing convoy frequency without eliminating runs entirely.`,
-    },
-    {
-      label: "Fuel cost saved",
-      value: `$${fmt(result.fuel_cost_saved_yr_usd)} per year`,
-      explain: `The DoD fully-burdened fuel cost is $12/L — this covers transport, security, personnel, and supply chain overhead, not just pump price. ${fuelL > 0 ? `That's ${Math.round(fuelL).toLocaleString()} liters of diesel per year that never needs to reach the FOB.` : ""}`,
-    },
-    {
-      label: "Convoy cost saved",
-      value: `$${fmt(result.convoy_cost_saved_yr_usd)} per year`,
-      explain: `DoD estimates $600/mile for fully-burdened convoy operations. A 100km round-trip resupply run costs roughly $37,200 when you factor in vehicles, fuel, personnel, security escorts, and risk premium.`,
-    },
-    {
-      label: "Total annual value",
-      value: `$${fmt(result.total_value_yr_usd)}`,
-      explain: paybackMonths
-        ? `A deployable WPT system in this class typically costs $500k–$2M. At this savings rate, payback on a $750k system takes approximately ${paybackMonths} month${paybackMonths === 1 ? "" : "s"} — before accounting for risk reduction value.`
-        : `Savings accumulate once the system is operational. The economic case strengthens at higher power delivery.`,
-      highlight: true,
-    },
-  ];
+  const fiveYearRows = [1, 2, 3, 4, 5].map((yr) => ({
+    yr,
+    gross: totalVal * yr,
+    cost: SYSTEM_COST + OPEX_YR * yr,
+    net: totalVal * yr - SYSTEM_COST - OPEX_YR * yr,
+  }));
 
   return (
-    <div className="space-y-4">
-      {items.map((item, i) => (
-        <div key={i} className="space-y-1">
-          <div className="flex justify-between items-baseline">
-            <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>{item.label}</span>
-            <span
-              className="text-sm font-mono font-semibold"
-              style={{ color: item.highlight ? "var(--green)" : "var(--text)" }}
-            >
-              {item.value}
-            </span>
-          </div>
-          <p className="text-xs leading-relaxed" style={{ color: "var(--text-subtle)" }}>
-            {item.explain}
-          </p>
-          {i < items.length - 1 && <div style={{ borderBottom: "1px solid var(--border)", marginTop: "0.75rem" }} />}
+    <div className="space-y-5">
+
+      {/* Convoy card */}
+      <div className="rounded-xl p-4" style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+        <div className="flex justify-between items-start mb-2">
+          <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Convoys eliminated</span>
+          <span className="text-base font-mono font-bold" style={{ color: "var(--green)" }}>
+            {convoys >= 1 ? `${convoys.toFixed(0)} per year` : `< 1 per year`}
+          </span>
         </div>
-      ))}
-      <div className="text-xs pt-1" style={{ color: "var(--text-subtle)", borderTop: "1px solid var(--border)" }}>
-        Source: RAND Corporation fully-burdened fuel cost · DoD convoy cost estimate $600/mile · FOB baseline 15 kW load
+        {convoys >= 1 && daysPerConvoy && (
+          <p className="text-xs mb-3" style={{ color: "var(--text-subtle)" }}>
+            One fewer resupply mission every {daysPerConvoy} day{daysPerConvoy !== 1 ? "s" : ""} — each one a crew in an IED threat environment.
+          </p>
+        )}
+        <div className="space-y-1">
+          {[
+            "Each convoy = vehicle crew exposed to IED, ambush, and VBIED threat",
+            "Average convoy strength: 4–8 personnel, 2–4 MRAP/LMTV vehicles",
+            "1 casualty per 24 convoys in active conflict zones (Army SMP data)",
+            "Eliminating convoys removes the primary logistics-related casualty risk",
+          ].map((b, i) => (
+            <div key={i} className="flex gap-2 text-xs" style={{ color: "var(--text-subtle)" }}>
+              <span style={{ color: "#f97316" }}>—</span>
+              {b}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Fuel cost card */}
+      <div className="rounded-xl p-4" style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+        <div className="flex justify-between items-start mb-2">
+          <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Fuel cost saved</span>
+          <span className="text-base font-mono font-bold" style={{ color: "var(--text)" }}>
+            ${fmt(fuelCost)} / yr
+          </span>
+        </div>
+        <p className="text-xs mb-3" style={{ color: "var(--text-subtle)" }}>
+          {fuelLPerYr.toLocaleString()} L of diesel per year that never needs to reach the FOB.
+        </p>
+        <div className="space-y-1">
+          {[
+            "$12/L fully-burdened DoD fuel cost (RAND Corporation, inflation-adjusted 2025)",
+            "Includes: theater transport, last-mile delivery, security escort, infrastructure, overhead",
+            `Pump price is ~$0.80/L — the $11.20 premium is the true logistics cost`,
+            "Not included: risk insurance, casualty-related costs, strategic disruption value",
+          ].map((b, i) => (
+            <div key={i} className="flex gap-2 text-xs" style={{ color: "var(--text-subtle)" }}>
+              <span style={{ color: "#60a5fa" }}>—</span>
+              {b}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Convoy cost card */}
+      <div className="rounded-xl p-4" style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+        <div className="flex justify-between items-start mb-2">
+          <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Convoy operations cost saved</span>
+          <span className="text-base font-mono font-bold" style={{ color: "var(--text)" }}>
+            ${fmt(convoyCost)} / yr
+          </span>
+        </div>
+        <p className="text-xs mb-3" style={{ color: "var(--text-subtle)" }}>
+          DoD $600/mile fully-burdened convoy estimate. A {`100 km`} round-trip run costs ~$37,200.
+        </p>
+        <div className="space-y-1">
+          {[
+            "Crew time + hazard pay: ~$8,000 per mission",
+            "Vehicle operating cost (MRAP/LMTV): ~$12,000 per mission",
+            "Security escort + route clearance: ~$10,000 per mission",
+            "Fuel, maintenance, supply chain overhead: ~$7,200 per mission",
+            "Risk premium / insurance equivalent: not counted in base estimate",
+          ].map((b, i) => (
+            <div key={i} className="flex gap-2 text-xs" style={{ color: "var(--text-subtle)" }}>
+              <span style={{ color: "#a78bfa" }}>—</span>
+              {b}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Operating context */}
+      <div className="rounded-xl p-4" style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+        <div className="text-xs font-medium uppercase tracking-wider mb-3" style={{ color: "var(--text-muted)" }}>
+          Operating costs (WPT system)
+        </div>
+        <div className="space-y-1 mb-3">
+          {[
+            "Input power: drawn from main base generator (already running) — effectively $0 incremental",
+            `At ${result.system_efficiency_pct.toFixed(1)}% system efficiency: ${result.electrical_input_kw.toFixed(0)} kW input → ${result.dc_power_delivered_kw.toFixed(1)} kW delivered`,
+            "Maintenance: field-serviceable optics, estimated $40–60k/yr for 2-person tech team",
+            "No fuel logistics required for the transmission itself — that's the point",
+            "System lifetime: 10–15 years (military ruggedized hardware)",
+          ].map((b, i) => (
+            <div key={i} className="flex gap-2 text-xs" style={{ color: "var(--text-subtle)" }}>
+              <span style={{ color: "#facc15" }}>—</span>
+              {b}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 5-year projection */}
+      {totalVal > 0 && (
+        <div className="rounded-xl p-4" style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+          <div className="text-xs font-medium uppercase tracking-wider mb-3" style={{ color: "var(--text-muted)" }}>
+            5-year economic projection — $750k system, ~$50k/yr opex
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs font-mono">
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                  {["Year", "Gross savings", "Total cost", "Net position"].map((h) => (
+                    <th key={h} className="text-left pb-1.5 pr-4 font-medium" style={{ color: "var(--text-muted)" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {fiveYearRows.map((r) => (
+                  <tr key={r.yr} style={{ borderBottom: "1px solid var(--border)" }}>
+                    <td className="py-1.5 pr-4" style={{ color: "var(--text-muted)" }}>Y{r.yr}</td>
+                    <td className="py-1.5 pr-4" style={{ color: "var(--green)" }}>${fmt(r.gross)}</td>
+                    <td className="py-1.5 pr-4" style={{ color: "#f97316" }}>${fmt(r.cost)}</td>
+                    <td className="py-1.5 pr-4" style={{ color: r.net > 0 ? "var(--green)" : "#f97316", fontWeight: r.net > 0 ? 600 : 400 }}>
+                      {r.net > 0 ? "+" : ""}${fmt(Math.abs(r.net))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {paybackMonths && (
+            <div className="mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
+              Payback: <span className="font-semibold" style={{ color: "var(--green)" }}>{paybackMonths} month{paybackMonths !== 1 ? "s" : ""}</span>
+              {" "}after deployment · 5-year net: <span className="font-semibold" style={{ color: "var(--green)" }}>+${fmt(fiveYearRows[4].net)}</span>
+              {" "}· Net annual value after opex: <span className="font-semibold" style={{ color: "var(--green)" }}>${fmt(netVal)}</span>/yr
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="text-xs" style={{ color: "var(--text-subtle)", borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>
+        Sources: RAND Corporation fully-burdened fuel cost · DoD convoy cost $600/mile · Army SMP casualty data · FOB baseline 15 kW ·
+        System cost assumption $750k (DoD procurement estimate, not retail) · Opex estimate $50k/yr
       </div>
     </div>
   );
@@ -1264,7 +1375,7 @@ WPT: continuous charge, zero deck handling, sub-1-min power-up`,
     tag: "Primary mission · DoD Tier 1",
     tagColor: "indigo",
     oneLiner: "Eliminate fuel convoys to forward operating bases — the most dangerous logistics mission in the DoD.",
-    keyStats: "~48 convoys/yr eliminated at 2km",
+    keyStats: "~79 convoys/yr eliminated at 2km",
     presets: { mode: "laser", rangeM: 2000, powerKw: 15, condition: "clear" },
     explanation: `Every fuel convoy to a Forward Operating Base (FOB) is a target. The DoD's fully-burdened fuel cost is $12/L — but the real cost is the convoy itself: IED exposure, personnel risk, logistics complexity.
 
@@ -1658,8 +1769,8 @@ export default function SimulatorPage() {
               dangerous resupply missions it eliminates.
             </p>
             <div className="flex gap-8 mt-6 flex-wrap">
-              <Stat label="Convoys eliminated per year" value="48+" sub="per 15 kW laser system" />
-              <Stat label="Fuel saved per day" value="300+ L" sub="diesel offset at 2 km" />
+              <Stat label="Convoys eliminated per year" value="79+" sub="per 15 kW laser system at 2 km" />
+              <Stat label="Fuel saved per day" value="108+ L" sub="diesel offset · 15 kW at 2 km" />
               <Stat label="Real-world anchor" value="800 W @ 8.6 km" sub="DARPA POWER PRAD 2025" />
             </div>
           </div>

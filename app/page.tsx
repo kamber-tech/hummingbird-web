@@ -1781,7 +1781,7 @@ export default function SimulatorPage() {
         <div className="grid lg:grid-cols-[380px_1fr] gap-8">
           {/* Config Panel */}
           <div
-            className="rounded-xl p-6 space-y-6 sticky top-6 self-start"
+            className="rounded-xl p-6 space-y-6 lg:sticky lg:top-6 lg:self-start"
             style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
           >
             {/* Mode selector — primary modes first, space as secondary */}
